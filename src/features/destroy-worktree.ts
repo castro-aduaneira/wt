@@ -51,8 +51,8 @@ export async function destroyWorktree(options: DestroyWorktreeOptions): Promise<
     context.mainRepoPath,
   );
 
-  if (await pathExists(context.runtimeRoot)) {
-    await fs.rm(context.runtimeRoot, { force: true, recursive: true });
+  if (await pathExists(context.worktreeRuntimeRoot)) {
+    await fs.rm(context.worktreeRuntimeRoot, { force: true, recursive: true });
   }
 
   log(`destroyed worktree: ${context.worktreePath}`);
