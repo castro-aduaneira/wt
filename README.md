@@ -172,6 +172,34 @@ Some GUIs and agent apps can run shell hooks around worktree lifecycle events. N
 | Worktree deletion command | `wt destroy` |
 | Force deletion for disposable branches only | `wt destroy --force` |
 
+### t3code project actions
+
+If the GUI already creates the Git worktree, as in t3code project actions, do **not** use `wt new` in the action. Configure a project-scoped action like this:
+
+```text
+Name: wt-init
+Command: wt init
+Run automatically on worktree creation: enabled
+```
+
+For conservative setups where dependency install is handled elsewhere:
+
+```text
+Name: wt-init-lite
+Command: wt init --no-hooks
+Run automatically on worktree creation: enabled
+```
+
+For cleanup, add a separate manual or delete-lifecycle action when the GUI supports it:
+
+```text
+Name: wt-rejoin
+Command: wt db rejoin || true
+Run before/after worktree deletion: enabled, if available
+```
+
+Do not set `pnpm initialize-worktree` as the long-term hook once the repo has `wt.config.json`; use `wt init` instead. Do not set `wt destroy` as an automatic deletion hook if the GUI itself is already deleting the worktree.
+
 Recommended defaults for tools such as t3code, Codex App, Antigravity, or any GUI that supports worktree hooks:
 
 ```bash
@@ -184,7 +212,7 @@ wt init
 # Before deleting a worktree
 wt db rejoin || true
 
-# Delete worktree safely
+# Delete worktree safely, only if the GUI delegates deletion to wt
 wt destroy
 ```
 
@@ -209,6 +237,8 @@ Default workflow:
 5. Run the repository's validation commands.
 6. Before deleting or abandoning a worktree, run `wt db rejoin`.
 7. Use `wt destroy` for clean deletion, or `wt destroy --force` only for disposable work.
+
+When a GUI already created the Git worktree, do not run `wt new`; run `wt init` inside the worktree instead.
 
 Never delete or rewrite `.env` manually. `wt db emancipate` may add a `WT MANAGED ENV` block; `wt db rejoin` removes only that block.
 ```
