@@ -1,4 +1,4 @@
-export const LOW_RAM_SUPABASE_EXCLUDES = ["analytics", "vector"] as const;
+export const LOW_RAM_SUPABASE_EXCLUDES = ["logflare", "vector"] as const;
 
 export function buildSupabaseStatusArgs(input: {
   workdir: string;
