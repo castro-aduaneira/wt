@@ -5,7 +5,9 @@ import { dbCommand } from "./features/db-command.js";
 import { destroyWorktree } from "./features/destroy-worktree.js";
 import { showEnvStatus } from "./features/env-status.js";
 import { initWorktree } from "./features/init-worktree.js";
+import { migrateConfig } from "./features/migrate-command.js";
 import { type NewWorktreeOptions, newWorktree } from "./features/new-worktree.js";
+import { setupConfig } from "./features/setup-command.js";
 import { inspectSupabaseConfig, showSupabaseStatus, startSupabase, stopSupabase } from "./features/supabase-command.js";
 
 const program = new Command();
@@ -13,7 +15,35 @@ const program = new Command();
 program
   .name("wt")
   .description("Reusable Git worktree orchestration CLI")
-  .version("0.1.0");
+  .version("0.1.1");
+
+program
+  .command("setup")
+  .description("Create wt.config.json interactively")
+  .option("-y, --yes", "use safe defaults without prompting")
+  .option("--force", "overwrite existing wt.config.json")
+  .action(async (options: { yes?: boolean; force?: boolean }) => {
+    await setupConfig({
+      cwd: process.cwd(),
+      yes: options.yes === true,
+      force: options.force === true,
+    });
+  });
+
+program
+  .command("migrate")
+  .description("Migrate legacy .worktree-initialization.toml to wt.config.json")
+  .option("--dry-run", "print the generated wt.config.json without writing")
+  .option("--force", "overwrite existing wt.config.json")
+  .option("--remove-legacy", "remove .worktree-initialization.toml after writing wt.config.json")
+  .action(async (options: { dryRun?: boolean; force?: boolean; removeLegacy?: boolean }) => {
+    await migrateConfig({
+      cwd: process.cwd(),
+      dryRun: options.dryRun === true,
+      force: options.force === true,
+      removeLegacy: options.removeLegacy === true,
+    });
+  });
 
 program
   .command("init")
