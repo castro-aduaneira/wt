@@ -25,3 +25,16 @@ export function buildSupabaseStartArgs(input: {
 
   return args;
 }
+
+export function buildSupabaseStopArgs(input: {
+  workdir: string;
+  noBackup: boolean;
+}): string[] {
+  const args = ["supabase", "stop", "--workdir", input.workdir];
+
+  if (input.noBackup) {
+    args.push("--no-backup");
+  }
+
+  return args;
+}
