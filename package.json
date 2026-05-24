@@ -1,18 +1,44 @@
 {
   "name": "@marcuscastelo/wt",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "description": "Reusable Git worktree orchestration CLI with managed local env support.",
+  "license": "MIT",
+  "author": "Marcus Castelo",
+  "homepage": "https://github.com/castro-aduaneira/wt#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/castro-aduaneira/wt.git"
+  },
+  "bugs": {
+    "url": "https://github.com/castro-aduaneira/wt/issues"
+  },
+  "keywords": [
+    "git",
+    "worktree",
+    "supabase",
+    "cli",
+    "developer-tools"
+  ],
   "bin": {
     "wt": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsx src/cli.ts",
     "type-check": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "check": "pnpm run type-check && pnpm run test"
+    "check": "pnpm run type-check && pnpm run test",
+    "prepack": "pnpm run build",
+    "prepublishOnly": "pnpm run check && pnpm run build"
   },
   "dependencies": {
     "commander": "^12.1.0"
