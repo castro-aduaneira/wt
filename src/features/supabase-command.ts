@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readSupabasePortsFromConfig, renderSupabaseConfig } from "../adapters/supabase/supabase-config.js";
-import { runCapture } from "../core/command.js";
+import { buildSupabaseStartArgs, buildSupabaseStatusArgs } from "../adapters/supabase/supabase-runtime.js";
+import { runCapture, runInherit } from "../core/command.js";
 import { loadConfig } from "../core/config.js";
 import { pathExists } from "../core/fs.js";
 import { getRepoContext } from "../core/repo-context.js";
@@ -44,13 +45,8 @@ export async function inspectSupabaseConfig(input: {
 
 export async function showSupabaseStatus(input: { cwd: string; envOutput: boolean }): Promise<void> {
   const context = await getRepoContext(input.cwd, { requireLinkedWorktree: false });
-  const { configPath } = await readSupabaseConfigTemplate(context.worktreePath);
-  const workdir = path.dirname(path.dirname(configPath));
-  const args = ["supabase", "status", "--workdir", workdir];
-
-  if (input.envOutput) {
-    args.push("-o", "env");
-  }
+  const workdir = await resolveSupabaseWorkdir(context.worktreePath);
+  const args = buildSupabaseStatusArgs({ workdir, envOutput: input.envOutput });
 
   try {
     const result = await runCapture("npx", args, context.worktreePath);
@@ -91,6 +87,20 @@ export async function showSupabaseStatus(input: { cwd: string; envOutput: boolea
   }
 }
 
+export async function startSupabase(input: {
+  cwd: string;
+  withAnalytics: boolean;
+}): Promise<void> {
+  const context = await getRepoContext(input.cwd, { requireLinkedWorktree: false });
+  const workdir = await resolveSupabaseWorkdir(context.worktreePath);
+  const args = buildSupabaseStartArgs({
+    workdir,
+    withAnalytics: input.withAnalytics,
+  });
+
+  await runInherit("npx", args, context.worktreePath);
+}
+
 export function isSupabaseStoppedStatusError(message: string): boolean {
   return (
     message.includes("No such container: supabase_db_") ||
@@ -108,6 +118,11 @@ export function extractSupabaseFailureDetail(message: string): string {
   }
 
   return message.trim();
+}
+
+async function resolveSupabaseWorkdir(worktreePath: string): Promise<string> {
+  const { configPath } = await readSupabaseConfigTemplate(worktreePath);
+  return path.dirname(path.dirname(configPath));
 }
 
 async function readSupabaseConfigTemplate(worktreePath: string): Promise<{
