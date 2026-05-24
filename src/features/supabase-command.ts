@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readSupabasePortsFromConfig, renderSupabaseConfig } from "../adapters/supabase/supabase-config.js";
-import { buildSupabaseStartArgs, buildSupabaseStatusArgs } from "../adapters/supabase/supabase-runtime.js";
+import { buildSupabaseStartArgs, buildSupabaseStatusArgs, buildSupabaseStopArgs } from "../adapters/supabase/supabase-runtime.js";
 import { materializeSupabaseWorkdir } from "../adapters/supabase/supabase-workdir.js";
 import { runCapture, runInherit } from "../core/command.js";
 import { loadConfig } from "../core/config.js";
@@ -116,6 +116,24 @@ export async function startSupabase(input: {
   const args = buildSupabaseStartArgs({
     workdir: resolved.workdir,
     withAnalytics: input.withAnalytics,
+  });
+
+  await runInherit("npx", args, context.worktreePath);
+}
+
+export async function stopSupabase(input: {
+  cwd: string;
+  isolated: boolean;
+  noBackup: boolean;
+}): Promise<void> {
+  const context = await getRepoContext(input.cwd, { requireLinkedWorktree: false });
+  const resolved = await resolveSupabaseWorkdir(context.worktreePath, {
+    isolated: input.isolated,
+    withAnalytics: false,
+  });
+  const args = buildSupabaseStopArgs({
+    workdir: resolved.workdir,
+    noBackup: input.noBackup,
   });
 
   await runInherit("npx", args, context.worktreePath);
