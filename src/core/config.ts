@@ -29,7 +29,7 @@ export interface WtConfig {
   };
 }
 
-interface LegacyConfig {
+export interface LegacyConfig {
   copy: CopySeedEntry[];
   run: Array<{ command: string; required?: boolean }>;
 }
@@ -82,6 +82,10 @@ export function mapLegacyConfig(legacy: LegacyConfig): WtConfig {
       afterNew: legacy.run.map((entry) => entry.command),
     },
   };
+}
+
+export function stringifyConfig(config: WtConfig): string {
+  return `${JSON.stringify(config, null, 2)}\n`;
 }
 
 export function parseLegacyWorktreeInitializationToml(input: string): LegacyConfig {
