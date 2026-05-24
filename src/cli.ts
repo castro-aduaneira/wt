@@ -116,13 +116,15 @@ supabase
   .option("--project-id <id>", "override rendered project id")
   .option("--render", "print rendered config.toml instead of JSON summary")
   .option("--with-analytics", "render analytics as enabled")
+  .option("--isolated", "use the isolated generated Supabase workdir")
   .action(
-    async (options: { projectId?: string; render?: boolean; withAnalytics?: boolean }) => {
+    async (options: { projectId?: string; render?: boolean; withAnalytics?: boolean; isolated?: boolean }) => {
       await inspectSupabaseConfig({
         cwd: process.cwd(),
         projectId: options.projectId,
         render: options.render === true,
         withAnalytics: options.withAnalytics === true,
+        isolated: options.isolated === true,
       });
     },
   );
@@ -131,10 +133,12 @@ supabase
   .command("status")
   .description("Run Supabase status for the active local workdir")
   .option("--env", "print Supabase status as env output")
-  .action(async (options: { env?: boolean }) => {
+  .option("--isolated", "use the isolated generated Supabase workdir")
+  .action(async (options: { env?: boolean; isolated?: boolean }) => {
     await showSupabaseStatus({
       cwd: process.cwd(),
       envOutput: options.env === true,
+      isolated: options.isolated === true,
     });
   });
 
@@ -142,10 +146,12 @@ supabase
   .command("start")
   .description("Start the Supabase stack for the active local workdir")
   .option("--with-analytics", "start analytics instead of using the low-RAM exclude set")
-  .action(async (options: { withAnalytics?: boolean }) => {
+  .option("--isolated", "use the isolated generated Supabase workdir")
+  .action(async (options: { withAnalytics?: boolean; isolated?: boolean }) => {
     await startSupabase({
       cwd: process.cwd(),
       withAnalytics: options.withAnalytics === true,
+      isolated: options.isolated === true,
     });
   });
 
