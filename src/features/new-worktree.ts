@@ -4,7 +4,9 @@ import { loadConfig } from "../core/config.js";
 import { branchExists } from "../core/git.js";
 import { inferSlugFromSource, slugify } from "../core/identity.js";
 import { log } from "../core/logger.js";
+import { getRepoContext } from "../core/repo-context.js";
 import { copySeedFiles } from "../core/seed.js";
+import { writeState } from "../core/state.js";
 
 export interface NewWorktreeOptions {
   cwd: string;
@@ -58,6 +60,17 @@ export async function newWorktree(options: NewWorktreeOptions): Promise<void> {
       await runShell(command, worktreePath);
     }
   }
+
+  const worktreeContext = await getRepoContext(worktreePath, { requireLinkedWorktree: true });
+
+  await writeState(worktreeContext.statePath, {
+    version: 1,
+    worktreeId: worktreeContext.worktreeId,
+    worktreePath: worktreeContext.worktreePath,
+    gitBranch: worktreeContext.gitBranch,
+    mode: "plain",
+    generatedFiles: [".worktree-state.json"],
+  });
 
   log(`created worktree: ${worktreePath}`);
 }
