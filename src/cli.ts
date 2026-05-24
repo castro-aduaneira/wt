@@ -6,7 +6,7 @@ import { destroyWorktree } from "./features/destroy-worktree.js";
 import { showEnvStatus } from "./features/env-status.js";
 import { initWorktree } from "./features/init-worktree.js";
 import { type NewWorktreeOptions, newWorktree } from "./features/new-worktree.js";
-import { inspectSupabaseConfig, showSupabaseStatus } from "./features/supabase-command.js";
+import { inspectSupabaseConfig, showSupabaseStatus, startSupabase } from "./features/supabase-command.js";
 
 const program = new Command();
 
@@ -135,6 +135,17 @@ supabase
     await showSupabaseStatus({
       cwd: process.cwd(),
       envOutput: options.env === true,
+    });
+  });
+
+supabase
+  .command("start")
+  .description("Start the Supabase stack for the active local workdir")
+  .option("--with-analytics", "start analytics instead of using the low-RAM exclude set")
+  .action(async (options: { withAnalytics?: boolean }) => {
+    await startSupabase({
+      cwd: process.cwd(),
+      withAnalytics: options.withAnalytics === true,
     });
   });
 
