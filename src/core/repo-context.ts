@@ -21,6 +21,7 @@ export interface RepoContext {
   mainRepoPath: string;
   worktreeId: string;
   runtimeRoot: string;
+  worktreeRuntimeRoot: string;
   statePath: string;
   envPath: string;
 }
@@ -42,6 +43,7 @@ export async function getRepoContext(
   const worktreePath = repoRoot;
   const worktreeId = buildWorktreeId(worktreePath);
   const runtimeRoot = path.join(gitCommonDir, "wt-local-envs");
+  const worktreeRuntimeRoot = path.join(runtimeRoot, "worktrees", worktreeId);
 
   return {
     cwd: path.resolve(cwd),
@@ -55,6 +57,7 @@ export async function getRepoContext(
     mainRepoPath: path.resolve(mainRepoPath),
     worktreeId,
     runtimeRoot,
+    worktreeRuntimeRoot,
     statePath: path.join(worktreePath, ".worktree-state.json"),
     envPath: path.join(worktreePath, ".env"),
   };
