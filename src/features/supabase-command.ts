@@ -52,12 +52,62 @@ export async function showSupabaseStatus(input: { cwd: string; envOutput: boolea
     args.push("-o", "env");
   }
 
-  const result = await runCapture("npx", args, context.worktreePath);
-  process.stdout.write(result.stdout);
+  try {
+    const result = await runCapture("npx", args, context.worktreePath);
+    process.stdout.write(result.stdout);
 
-  if (result.stderr.length > 0) {
-    process.stderr.write(result.stderr);
+    if (result.stderr.length > 0) {
+      process.stderr.write(result.stderr);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    if (!isSupabaseStoppedStatusError(message)) {
+      throw error;
+    }
+
+    if (input.envOutput) {
+      throw new Error(
+        [
+          "Supabase local stack is not running; cannot print env output.",
+          `workdir: ${workdir}`,
+          "Start the stack first, then rerun `wt supabase status --env`.",
+        ].join("\n"),
+      );
+    }
+
+    console.log(
+      JSON.stringify(
+        {
+          workdir,
+          running: false,
+          reason: "supabase local stack is not running or has stale local metadata",
+          detail: extractSupabaseFailureDetail(message),
+        },
+        null,
+        2,
+      ),
+    );
   }
+}
+
+export function isSupabaseStoppedStatusError(message: string): boolean {
+  return (
+    message.includes("No such container: supabase_db_") ||
+    message.includes("Cannot connect to the Docker daemon") ||
+    message.includes("supabase start") ||
+    message.includes("is not running")
+  );
+}
+
+export function extractSupabaseFailureDetail(message: string): string {
+  const stderrIndex = message.indexOf("stderr:\n");
+
+  if (stderrIndex >= 0) {
+    return message.slice(stderrIndex + "stderr:\n".length).trim();
+  }
+
+  return message.trim();
 }
 
 async function readSupabaseConfigTemplate(worktreePath: string): Promise<{
