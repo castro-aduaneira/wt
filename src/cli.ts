@@ -6,6 +6,7 @@ import { destroyWorktree } from "./features/destroy-worktree.js";
 import { showEnvStatus } from "./features/env-status.js";
 import { initWorktree } from "./features/init-worktree.js";
 import { type NewWorktreeOptions, newWorktree } from "./features/new-worktree.js";
+import { inspectSupabaseConfig } from "./features/supabase-command.js";
 
 const program = new Command();
 
@@ -106,6 +107,25 @@ db
   .action(async () => {
     await dbCommand("rejoin", { cwd: process.cwd() });
   });
+
+const supabase = program.command("supabase").description("Supabase adapter commands");
+
+supabase
+  .command("config")
+  .description("Inspect or render the active Supabase config")
+  .option("--project-id <id>", "override rendered project id")
+  .option("--render", "print rendered config.toml instead of JSON summary")
+  .option("--with-analytics", "render analytics as enabled")
+  .action(
+    async (options: { projectId?: string; render?: boolean; withAnalytics?: boolean }) => {
+      await inspectSupabaseConfig({
+        cwd: process.cwd(),
+        projectId: options.projectId,
+        render: options.render === true,
+        withAnalytics: options.withAnalytics === true,
+      });
+    },
+  );
 
 program.parseAsync(normalizeArgv(process.argv)).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
