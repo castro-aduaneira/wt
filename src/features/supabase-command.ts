@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { readSupabasePortsFromConfig, renderSupabaseConfig } from "../adapters/supabase/supabase-config.js";
 import { buildSupabaseStartArgs, buildSupabaseStatusArgs } from "../adapters/supabase/supabase-runtime.js";
+import { materializeSupabaseWorkdir } from "../adapters/supabase/supabase-workdir.js";
 import { runCapture, runInherit } from "../core/command.js";
 import { loadConfig } from "../core/config.js";
 import { pathExists } from "../core/fs.js";
@@ -12,11 +13,16 @@ export async function inspectSupabaseConfig(input: {
   projectId: string | undefined;
   render: boolean;
   withAnalytics: boolean;
+  isolated: boolean;
 }): Promise<void> {
   const context = await getRepoContext(input.cwd, { requireLinkedWorktree: false });
-  const { configPath, rawTemplate } = await readSupabaseConfigTemplate(context.worktreePath);
+  const resolved = await resolveSupabaseWorkdir(context.worktreePath, {
+    isolated: input.isolated,
+    withAnalytics: input.withAnalytics,
+  });
+  const rawTemplate = await fs.readFile(resolved.configPath, "utf8");
   const ports = readSupabasePortsFromConfig(rawTemplate);
-  const projectId = input.projectId ?? `wt_${context.worktreeId}`;
+  const projectId = input.projectId ?? resolved.projectId ?? `wt_${context.worktreeId}`;
 
   if (input.render) {
     process.stdout.write(
@@ -32,7 +38,9 @@ export async function inspectSupabaseConfig(input: {
   console.log(
     JSON.stringify(
       {
-        configPath,
+        configPath: resolved.configPath,
+        workdir: resolved.workdir,
+        isolated: input.isolated,
         projectId,
         ports,
         analyticsEnabled: input.withAnalytics,
@@ -43,10 +51,17 @@ export async function inspectSupabaseConfig(input: {
   );
 }
 
-export async function showSupabaseStatus(input: { cwd: string; envOutput: boolean }): Promise<void> {
+export async function showSupabaseStatus(input: {
+  cwd: string;
+  envOutput: boolean;
+  isolated: boolean;
+}): Promise<void> {
   const context = await getRepoContext(input.cwd, { requireLinkedWorktree: false });
-  const workdir = await resolveSupabaseWorkdir(context.worktreePath);
-  const args = buildSupabaseStatusArgs({ workdir, envOutput: input.envOutput });
+  const resolved = await resolveSupabaseWorkdir(context.worktreePath, {
+    isolated: input.isolated,
+    withAnalytics: false,
+  });
+  const args = buildSupabaseStatusArgs({ workdir: resolved.workdir, envOutput: input.envOutput });
 
   try {
     const result = await runCapture("npx", args, context.worktreePath);
@@ -66,7 +81,7 @@ export async function showSupabaseStatus(input: { cwd: string; envOutput: boolea
       throw new Error(
         [
           "Supabase local stack is not running; cannot print env output.",
-          `workdir: ${workdir}`,
+          `workdir: ${resolved.workdir}`,
           "Start the stack first, then rerun `wt supabase status --env`.",
         ].join("\n"),
       );
@@ -75,7 +90,8 @@ export async function showSupabaseStatus(input: { cwd: string; envOutput: boolea
     console.log(
       JSON.stringify(
         {
-          workdir,
+          workdir: resolved.workdir,
+          isolated: input.isolated,
           running: false,
           reason: "supabase local stack is not running or has stale local metadata",
           detail: extractSupabaseFailureDetail(message),
@@ -90,11 +106,15 @@ export async function showSupabaseStatus(input: { cwd: string; envOutput: boolea
 export async function startSupabase(input: {
   cwd: string;
   withAnalytics: boolean;
+  isolated: boolean;
 }): Promise<void> {
   const context = await getRepoContext(input.cwd, { requireLinkedWorktree: false });
-  const workdir = await resolveSupabaseWorkdir(context.worktreePath);
+  const resolved = await resolveSupabaseWorkdir(context.worktreePath, {
+    isolated: input.isolated,
+    withAnalytics: input.withAnalytics,
+  });
   const args = buildSupabaseStartArgs({
-    workdir,
+    workdir: resolved.workdir,
     withAnalytics: input.withAnalytics,
   });
 
@@ -120,9 +140,34 @@ export function extractSupabaseFailureDetail(message: string): string {
   return message.trim();
 }
 
-async function resolveSupabaseWorkdir(worktreePath: string): Promise<string> {
-  const { configPath } = await readSupabaseConfigTemplate(worktreePath);
-  return path.dirname(path.dirname(configPath));
+async function resolveSupabaseWorkdir(
+  worktreePath: string,
+  options: { isolated: boolean; withAnalytics: boolean },
+): Promise<{ workdir: string; configPath: string; projectId: string | null }> {
+  const context = await getRepoContext(worktreePath, { requireLinkedWorktree: false });
+  const { configPath, rawTemplate } = await readSupabaseConfigTemplate(worktreePath);
+
+  if (!options.isolated) {
+    return {
+      workdir: path.dirname(path.dirname(configPath)),
+      configPath,
+      projectId: null,
+    };
+  }
+
+  const materialized = await materializeSupabaseWorkdir({
+    sourceSupabaseDir: path.dirname(configPath),
+    targetWorkdir: path.join(context.worktreeRuntimeRoot, "supabase-workdir"),
+    worktreeId: context.worktreeId,
+    rawTemplate,
+    withAnalytics: options.withAnalytics,
+  });
+
+  return {
+    workdir: materialized.workdir,
+    configPath: materialized.configPath,
+    projectId: materialized.projectId,
+  };
 }
 
 async function readSupabaseConfigTemplate(worktreePath: string): Promise<{
