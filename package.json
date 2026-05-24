@@ -1,6 +1,6 @@
 {
   "name": "@marcuscastelo/wt",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "description": "Reusable Git worktree orchestration CLI with managed local env support.",
   "license": "MIT",
