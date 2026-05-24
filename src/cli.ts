@@ -6,7 +6,7 @@ import { destroyWorktree } from "./features/destroy-worktree.js";
 import { showEnvStatus } from "./features/env-status.js";
 import { initWorktree } from "./features/init-worktree.js";
 import { type NewWorktreeOptions, newWorktree } from "./features/new-worktree.js";
-import { inspectSupabaseConfig, showSupabaseStatus, startSupabase } from "./features/supabase-command.js";
+import { inspectSupabaseConfig, showSupabaseStatus, startSupabase, stopSupabase } from "./features/supabase-command.js";
 
 const program = new Command();
 
@@ -152,6 +152,19 @@ supabase
       cwd: process.cwd(),
       withAnalytics: options.withAnalytics === true,
       isolated: options.isolated === true,
+    });
+  });
+
+supabase
+  .command("stop")
+  .description("Stop the Supabase stack for the active local workdir")
+  .option("--isolated", "use the isolated generated Supabase workdir")
+  .option("--no-backup", "stop without creating a local backup")
+  .action(async (options: { isolated?: boolean; backup?: boolean }) => {
+    await stopSupabase({
+      cwd: process.cwd(),
+      isolated: options.isolated === true,
+      noBackup: options.backup === false,
     });
   });
 
