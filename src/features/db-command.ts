@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parseSupabaseStatusEnvOutput, requiredSupabaseEnvValue } from "../adapters/supabase/supabase-env.js";
-import { buildSupabaseStartArgs, buildSupabaseStatusArgs } from "../adapters/supabase/supabase-runtime.js";
+import { buildSupabaseStartArgs, buildSupabaseStatusArgs, buildSupabaseStopArgs } from "../adapters/supabase/supabase-runtime.js";
 import { materializeSupabaseWorkdir } from "../adapters/supabase/supabase-workdir.js";
 import { runCapture, runInherit } from "../core/command.js";
 import { loadConfig } from "../core/config.js";
@@ -77,8 +77,22 @@ async function emancipate(cwd: string): Promise<void> {
 
 async function rejoin(cwd: string): Promise<void> {
   const context = await getRepoContext(cwd, { requireLinkedWorktree: false });
+  const source = await readSupabaseConfigTemplate(context.worktreePath);
+  const materialized = await materializeSupabaseWorkdir({
+    sourceSupabaseDir: path.dirname(source.configPath),
+    targetWorkdir: path.join(context.worktreeRuntimeRoot, "supabase-workdir"),
+    worktreeId: context.worktreeId,
+    rawTemplate: source.rawTemplate,
+    withAnalytics: false,
+  });
+
+  await runInherit(
+    "npx",
+    buildSupabaseStopArgs({ workdir: materialized.workdir, noBackup: false }),
+    context.worktreePath,
+  );
   await removeManagedEnvFileBlock(context.envPath);
-  console.log("Removed wt-managed Supabase environment block from .env.");
+  console.log("Stopped isolated Supabase stack and removed wt-managed environment block from .env.");
 }
 
 async function readSupabaseConfigTemplate(worktreePath: string): Promise<{
