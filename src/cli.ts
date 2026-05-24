@@ -5,7 +5,7 @@ import { dbCommand } from "./features/db-command.js";
 import { destroyWorktree } from "./features/destroy-worktree.js";
 import { showEnvStatus } from "./features/env-status.js";
 import { initWorktree } from "./features/init-worktree.js";
-import { newWorktree } from "./features/new-worktree.js";
+import { type NewWorktreeOptions, newWorktree } from "./features/new-worktree.js";
 
 const program = new Command();
 
@@ -47,15 +47,26 @@ program
         printOnly?: boolean;
       },
     ) => {
-      await newWorktree({
+      const newOptions: NewWorktreeOptions = {
         cwd: process.cwd(),
         source,
-        wtRoot: options.wtRoot,
-        branchPrefix: options.branchPrefix,
-        slug: options.slug,
         runHooks: options.hooks !== false,
         printOnly: options.printOnly === true,
-      });
+      };
+
+      if (options.wtRoot !== undefined) {
+        newOptions.wtRoot = options.wtRoot;
+      }
+
+      if (options.branchPrefix !== undefined) {
+        newOptions.branchPrefix = options.branchPrefix;
+      }
+
+      if (options.slug !== undefined) {
+        newOptions.slug = options.slug;
+      }
+
+      await newWorktree(newOptions);
     },
   );
 
@@ -96,8 +107,16 @@ db
     await dbCommand("rejoin", { cwd: process.cwd() });
   });
 
-program.parseAsync(process.argv).catch((error: unknown) => {
+program.parseAsync(normalizeArgv(process.argv)).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
   console.error(`[wt] ${message}`);
   process.exit(1);
 });
+
+function normalizeArgv(argv: string[]): string[] {
+  if (argv[2] !== "--") {
+    return argv;
+  }
+
+  return [argv[0] ?? "node", argv[1] ?? "wt", ...argv.slice(3)];
+}
