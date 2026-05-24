@@ -6,7 +6,7 @@ import { destroyWorktree } from "./features/destroy-worktree.js";
 import { showEnvStatus } from "./features/env-status.js";
 import { initWorktree } from "./features/init-worktree.js";
 import { type NewWorktreeOptions, newWorktree } from "./features/new-worktree.js";
-import { inspectSupabaseConfig } from "./features/supabase-command.js";
+import { inspectSupabaseConfig, showSupabaseStatus } from "./features/supabase-command.js";
 
 const program = new Command();
 
@@ -126,6 +126,17 @@ supabase
       });
     },
   );
+
+supabase
+  .command("status")
+  .description("Run Supabase status for the active local workdir")
+  .option("--env", "print Supabase status as env output")
+  .action(async (options: { env?: boolean }) => {
+    await showSupabaseStatus({
+      cwd: process.cwd(),
+      envOutput: options.env === true,
+    });
+  });
 
 program.parseAsync(normalizeArgv(process.argv)).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
