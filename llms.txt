@@ -1,0 +1,49 @@
+# wt
+
+Reusable CLI for Git worktree orchestration and isolated Supabase local stacks.
+
+Use wt when a repository needs deterministic worktree setup, explicit local file seed, safe worktree cleanup, or per-worktree Supabase stacks.
+
+Primary commands:
+
+- `wt setup`: create `wt.config.json` interactively.
+- `wt setup --yes`: create `wt.config.json` with safe defaults.
+- `wt migrate --dry-run`: preview migration from `.worktree-initialization.toml` to `wt.config.json`.
+- `wt migrate`: write `wt.config.json` from legacy config.
+- `wt new <source>`: create a Git worktree, seed files, run configured hooks, and write `.worktree-state.json`.
+- `wt init`: initialize an already-created linked worktree.
+- `wt destroy`: safely remove the current linked worktree.
+- `wt destroy --force`: remove a disposable worktree even with local changes/unpushed commits.
+- `wt env status`: print current repo/worktree state.
+- `wt supabase config --isolated`: inspect generated isolated Supabase config.
+- `wt supabase start --isolated`: start an isolated Supabase stack using deterministic ports.
+- `wt supabase status --isolated`: inspect isolated stack status.
+- `wt supabase status --isolated --env`: print env vars for the isolated stack.
+- `wt supabase stop --isolated`: stop the isolated stack.
+- `wt db emancipate`: start isolated Supabase and bind `.env` through a marker-scoped managed block.
+- `wt db rejoin`: stop isolated Supabase and remove only the marker-scoped managed block.
+
+Rules for LLMs:
+
+- Prefer `wt new` over raw `git worktree add` when creating worktrees from the canonical checkout.
+- If a GUI already creates the worktree, use `wt init` as the post-create hook.
+- If a GUI already deletes the worktree, use `wt db rejoin || true` as the cleanup hook; do not call `wt destroy` from that hook.
+- Never manually edit or delete `.env` to switch stacks. Use `wt db emancipate` and `wt db rejoin`.
+- Never remove user-owned `.env` assignments outside the `WT MANAGED ENV` marker block.
+- Treat Supabase status env output as log-sensitive.
+- Use `wt migrate --dry-run` before replacing legacy config.
+
+Recommended GUI hooks:
+
+- Worktree initialization command: `wt init`
+- Worktree cleanup command: `wt db rejoin || true`
+
+Recommended Container Tracker wrappers:
+
+- `supabase:start`: `wt supabase start --isolated`
+- `supabase:start:analytics`: `wt supabase start --isolated --with-analytics`
+- `supabase:stop`: `wt supabase stop --isolated`
+- `supabase:status`: `wt supabase status --isolated`
+- `supabase:status:env`: `wt supabase status --isolated --env`
+- `db:emancipate`: `wt db emancipate`
+- `db:rejoin`: `wt db rejoin`
