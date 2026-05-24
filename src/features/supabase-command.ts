@@ -7,7 +7,7 @@ import { getRepoContext } from "../core/repo-context.js";
 
 export async function inspectSupabaseConfig(input: {
   cwd: string;
-  projectId?: string;
+  projectId: string | undefined;
   render: boolean;
   withAnalytics: boolean;
 }): Promise<void> {
