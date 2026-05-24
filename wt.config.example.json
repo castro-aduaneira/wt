@@ -1,0 +1,26 @@
+{
+  "worktreeRoot": "../wt",
+  "branchPrefix": "feat/",
+  "seed": {
+    "copy": [
+      {
+        "source": ".env",
+        "target": ".env",
+        "required": true,
+        "overwrite": false
+      }
+    ]
+  },
+  "hooks": {
+    "afterInit": [
+      "pnpm install"
+    ],
+    "afterNew": [
+      "pnpm install"
+    ]
+  },
+  "supabase": {
+    "enabled": false,
+    "configPath": "supabase/config.toml"
+  }
+}

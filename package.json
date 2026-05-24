@@ -1,0 +1,29 @@
+{
+  "name": "@marcuscastelo/wt",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Reusable Git worktree orchestration CLI with managed local env support.",
+  "bin": {
+    "wt": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "type-check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "check": "pnpm run type-check && pnpm run test"
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.14",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
