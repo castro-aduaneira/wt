@@ -51,8 +51,7 @@ export async function removeManagedEnvFileBlock(envPath: string): Promise<void> 
     WT_MANAGED_ENV_BLOCK_START,
     WT_MANAGED_ENV_BLOCK_END,
   );
-  const cleaned = stripManagedEnvAssignments(withoutBlock);
-  await fs.writeFile(envPath, normalizeTrailingNewline(cleaned));
+  await fs.writeFile(envPath, normalizeTrailingNewline(withoutBlock));
 }
 
 export function upsertManagedEnvBlock(content: string, values: Record<string, string>): string {
@@ -62,8 +61,7 @@ export function upsertManagedEnvBlock(content: string, values: Record<string, st
     WT_MANAGED_ENV_BLOCK_START,
     WT_MANAGED_ENV_BLOCK_END,
   );
-  const withoutManagedAssignments = stripManagedEnvAssignments(withoutBlock);
-  const base = withoutManagedAssignments.trimEnd();
+  const base = withoutBlock.trimEnd();
   const block = renderManagedEnvBlock(values);
 
   return `${base}${base.length > 0 ? "\n\n" : ""}${block}\n`;
@@ -88,19 +86,6 @@ export function renderManagedEnvBlock(values: Record<string, string>): string {
 
   lines.push(WT_MANAGED_ENV_BLOCK_END);
   return lines.join("\n");
-}
-
-export function stripManagedEnvAssignments(content: string): string {
-  const managedKeys = new Set<string>(WT_MANAGED_ENV_KEYS);
-
-  return content
-    .split(/\r?\n/)
-    .filter((line) => {
-      const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=/);
-      return !match?.[1] || !managedKeys.has(match[1]);
-    })
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n");
 }
 
 export function stripMarkerBlock(content: string, startMarker: string, endMarker: string): string {
