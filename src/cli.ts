@@ -9,14 +9,14 @@ import { migrateConfig } from "./features/migrate-command.js";
 import { type NewWorktreeOptions, newWorktree } from "./features/new-worktree.js";
 import { setupConfig } from "./features/setup-command.js";
 import { inspectSupabaseConfig, showSupabaseStatus, startSupabase, stopSupabase } from "./features/supabase-command.js";
-import { initWorktreeDatabase, showWorktreeStatus } from "./features/worktree-db-command.js";
+import { initWorktreeDatabase, rejoinWorktreeDatabase, showWorktreeStatus } from "./features/worktree-db-command.js";
 
 const program = new Command();
 
 program
   .name("wt")
   .description("Reusable Git worktree orchestration CLI")
-  .version("0.7.0");
+  .version("0.9.0");
 
 program
   .command("setup")
@@ -135,8 +135,12 @@ db
 db
   .command("rejoin")
   .description("Return this worktree to shared staging mode")
-  .action(async () => {
-    await dbCommand("rejoin", { cwd: process.cwd() });
+  .option("--with-analytics", "start analytics instead of using the low-RAM exclude set")
+  .action(async (options: { withAnalytics?: boolean }) => {
+    await rejoinWorktreeDatabase({
+      cwd: process.cwd(),
+      withAnalytics: options.withAnalytics === true,
+    });
   });
 
 const worktree = db.command("worktree").description("Worktree database environment commands");
