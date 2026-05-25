@@ -29,7 +29,8 @@
     "LICENSE",
     "AGENTS.md",
     "llms.txt",
-    "skills"
+    "skills",
+    "docs"
   ],
   "publishConfig": {
     "access": "public"
