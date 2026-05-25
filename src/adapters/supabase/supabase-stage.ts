@@ -5,13 +5,24 @@ import { loadConfig } from "../../core/config.js";
 import { pathExists } from "../../core/fs.js";
 import { hashString } from "../../core/identity.js";
 import type { RepoContext } from "../../core/repo-context.js";
+import { withRuntimeLock } from "../../core/runtime-lock.js";
 import { readSupabasePortsFromConfig, renderSupabaseConfig, type SupabasePorts } from "./supabase-config.js";
-import { getSupabaseStatusEnvMap } from "./supabase-db.js";
-import { buildSupabaseStartArgs } from "./supabase-runtime.js";
+import {
+  applyLocalSeedIntoRunningProject,
+  dumpDatabaseToFile,
+  getSupabaseStatusEnvMap,
+  restoreBackupIntoRunningProject,
+} from "./supabase-db.js";
+import {
+  buildSupabaseStartArgs,
+  buildSupabaseStopArgs,
+  purgeSupabaseProjectResources,
+} from "./supabase-runtime.js";
 
 export const DEFAULT_STAGE_PROJECT_ID_PREFIX = "wt_stage_";
 export const STAGING_PROJECT_DIR_NAME = "staging";
 export const STAGING_SNAPSHOT_FILE_NAME = "staging.dump";
+export const STAGE_REBUILD_LOCK_NAME = "stage-rebuild.lock";
 
 const EXCLUDED_SUPABASE_ENTRIES = new Set(["config.toml", ".temp", ".branches"]);
 
@@ -74,6 +85,66 @@ export async function ensureStageEnvironment(
   }
 
   return getRunningStageEnvironment(context);
+}
+
+export async function rebuildStageEnvironment(
+  context: RepoContext,
+  options: { withAnalytics: boolean } = { withAnalytics: false },
+): Promise<RunningStageEnvironment> {
+  return withRuntimeLock({
+    locksRoot: path.join(context.runtimeRoot, "locks"),
+    fileName: STAGE_REBUILD_LOCK_NAME,
+    operation: async () => {
+      const stageDefinition = await getStageDefinition(context);
+      const snapshotExists = await pathExists(stageDefinition.snapshotPath);
+
+      if (await pathExists(stageDefinition.workdir)) {
+        if (await isSupabaseProjectRunning(stageDefinition.workdir)) {
+          await runInherit(
+            "npx",
+            buildSupabaseStopArgs({
+              workdir: stageDefinition.workdir,
+              noBackup: true,
+            }),
+            stageDefinition.workdir,
+          );
+        }
+
+        await purgeSupabaseProjectResources({
+          projectId: stageDefinition.projectId,
+          cwd: context.repoRoot,
+        });
+        await fs.rm(stageDefinition.workdir, { force: true, recursive: true });
+      }
+
+      await materializeStageProject(context, options);
+      await runInherit(
+        "npx",
+        buildSupabaseStartArgs({
+          workdir: stageDefinition.workdir,
+          withAnalytics: options.withAnalytics,
+        }),
+        stageDefinition.workdir,
+      );
+
+      if (snapshotExists) {
+        await restoreBackupIntoRunningProject({
+          workdir: stageDefinition.workdir,
+          backupPath: stageDefinition.snapshotPath,
+        });
+      }
+
+      await applyLocalSeedIntoRunningProject(stageDefinition.workdir);
+
+      const stage = await getRunningStageEnvironment(context);
+      await dumpDatabaseToFile({
+        workdir: stage.workdir,
+        outputPath: stage.snapshotPath,
+      });
+
+      return stage;
+    },
+  });
 }
 
 export async function getRunningStageEnvironment(context: RepoContext): Promise<RunningStageEnvironment> {
