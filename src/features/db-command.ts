@@ -2,7 +2,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { dumpDatabaseToFile } from "../adapters/supabase/supabase-db.js";
 import { parseSupabaseStatusEnvOutput, requiredSupabaseEnvValue } from "../adapters/supabase/supabase-env.js";
-import { ensureStageEnvironment, getStageDefinition } from "../adapters/supabase/supabase-stage.js";
+import {
+  ensureStageEnvironment,
+  getStageDefinition,
+  rebuildStageEnvironment,
+} from "../adapters/supabase/supabase-stage.js";
 import { buildSupabaseStartArgs, buildSupabaseStatusArgs, buildSupabaseStopArgs } from "../adapters/supabase/supabase-runtime.js";
 import { materializeSupabaseWorkdir } from "../adapters/supabase/supabase-workdir.js";
 import { runCapture, runInherit } from "../core/command.js";
@@ -71,6 +75,18 @@ export async function refreshStageLocalSnapshot(input: {
   });
 
   console.log(`staging snapshot refreshed: ${stage.snapshotPath}`);
+}
+
+export async function rebuildStage(input: {
+  cwd: string;
+  withAnalytics: boolean;
+}): Promise<void> {
+  const context = await getRepoContext(input.cwd, { requireLinkedWorktree: false });
+  const stage = await rebuildStageEnvironment(context, {
+    withAnalytics: input.withAnalytics,
+  });
+
+  console.log(`shared staging rebuilt: ${stage.projectId}`);
 }
 
 async function emancipate(cwd: string): Promise<void> {
