@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import { dbCommand, ensureStage, rebuildStage, refreshStageLocalSnapshot, showStageStatus, showWorktreeStatus } from "./features/db-command.js";
+import { dbCommand, ensureStage, rebuildStage, refreshStageLocalSnapshot, showStageStatus } from "./features/db-command.js";
 import { destroyWorktree } from "./features/destroy-worktree.js";
 import { showEnvStatus } from "./features/env-status.js";
 import { initWorktree } from "./features/init-worktree.js";
@@ -9,6 +9,7 @@ import { migrateConfig } from "./features/migrate-command.js";
 import { type NewWorktreeOptions, newWorktree } from "./features/new-worktree.js";
 import { setupConfig } from "./features/setup-command.js";
 import { inspectSupabaseConfig, showSupabaseStatus, startSupabase, stopSupabase } from "./features/supabase-command.js";
+import { initWorktreeDatabase, showWorktreeStatus } from "./features/worktree-db-command.js";
 
 const program = new Command();
 
@@ -145,6 +146,17 @@ worktree
   .description("Print current worktree database environment state")
   .action(async () => {
     await showWorktreeStatus({ cwd: process.cwd() });
+  });
+
+worktree
+  .command("init")
+  .description("Initialize current worktree database environment in shared staging mode")
+  .option("--with-analytics", "start analytics instead of using the low-RAM exclude set")
+  .action(async (options: { withAnalytics?: boolean }) => {
+    await initWorktreeDatabase({
+      cwd: process.cwd(),
+      withAnalytics: options.withAnalytics === true,
+    });
   });
 
 const stage = db.command("stage").description("Shared staging database commands");
