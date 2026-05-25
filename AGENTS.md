@@ -1,6 +1,6 @@
 # AGENTS.md — wt Repository Workflow
 
-This file documents the operating workflow for agents and maintainers working on `@marcuscastelo/wt`.
+This file is the operating guide for agents and maintainers working on `@marcuscastelo/wt`.
 
 ## Purpose
 
@@ -8,17 +8,70 @@ This file documents the operating workflow for agents and maintainers working on
 
 - Git worktree creation and cleanup.
 - Explicit local file seeding, especially `.env`.
-- Per-worktree Supabase isolated stacks.
+- Shared staging Supabase stacks.
+- Per-worktree Supabase dev stacks.
 - Safe `.env` binding through marker-scoped managed blocks.
-- Migration away from repo-local worktree scripts.
+- Migration away from repo-local worktree/database wrappers.
 
-The CLI was extracted from the Container Tracker workflow and must remain generic. Do not hardcode Container Tracker domain rules or paths into the package.
+`wt` was extracted from the Container Tracker workflow, but it must remain reusable. Do not hardcode Container Tracker domain rules into core behavior. Repo-specific names belong in `wt.config.json`.
+
+## Current Validated Version
+
+Container Tracker PR #529 validated `@marcuscastelo/wt@^0.12.0` for:
+
+- `db:worktree:*`
+- `db:stage:*`
+- `db:emancipate`
+- `db:rejoin`
+- `supabase:active:*`
+- legacy `supabase:* --isolated` compatibility
+
+Detailed notes are in:
+
+```text
+docs/container-tracker-pr-529.md
+```
 
 ## Relationship with Container Tracker
 
-Container Tracker is the primary proving ground for `wt`, but `wt` must stay reusable.
+Container Tracker is the primary proving ground for `wt`.
 
-Validated Container Tracker wrappers:
+Container Tracker config:
+
+```json
+{
+  "runtime": {
+    "rootDirName": "ct-local-envs",
+    "stageProjectIdPrefix": "ct_stage_",
+    "worktreeProjectIdPrefix": "ct_dev_"
+  },
+  "supabase": {
+    "enabled": true,
+    "configPath": "supabase/config.toml"
+  }
+}
+```
+
+Validated script mapping from PR #529:
+
+```json
+{
+  "db:worktree:init": "wt db worktree init",
+  "db:worktree:status": "wt db worktree status",
+  "db:stage:ensure": "wt db stage ensure",
+  "db:stage:status": "wt db stage status",
+  "db:stage:refresh-local-snapshot": "wt db stage refresh-local-snapshot",
+  "db:stage:rebuild": "wt db stage rebuild",
+  "db:emancipate": "wt db emancipate",
+  "db:rejoin": "wt db rejoin",
+  "supabase:active:start": "wt supabase start",
+  "supabase:active:stop": "wt supabase stop",
+  "supabase:active:status": "wt supabase status",
+  "supabase:active:status:env": "wt supabase status --env"
+}
+```
+
+Compatibility scripts intentionally preserved:
 
 ```json
 {
@@ -26,13 +79,22 @@ Validated Container Tracker wrappers:
   "supabase:start:analytics": "wt supabase start --isolated --with-analytics",
   "supabase:stop": "wt supabase stop --isolated",
   "supabase:status": "wt supabase status --isolated",
-  "supabase:status:env": "wt supabase status --isolated --env",
-  "db:emancipate": "wt db emancipate",
-  "db:rejoin": "wt db rejoin"
+  "supabase:status:env": "wt supabase status --isolated --env"
 }
 ```
 
-Do not migrate Container Tracker `db:stage:*`, `db:worktree:*`, `initialize-worktree`, or `destroy-worktree` wrappers until equivalent behavior is explicitly implemented and smoke-tested in `wt`.
+Do not remove Container Tracker local wrappers until equivalent `wt` behavior is implemented and smoke-tested.
+
+Still local after PR #529:
+
+```text
+supabase:reset
+supabase:db:diff
+supabase:gen-types
+initialize-worktree
+destroy-worktree
+remote/prod-to-local scripts
+```
 
 ## Compatibility Policy
 
@@ -74,7 +136,7 @@ Overwrite an existing config only when requested:
 wt setup --force
 ```
 
-The setup command must prefer safe defaults:
+Safe defaults:
 
 - `worktreeRoot`: `../wt`
 - `branchPrefix`: `feat/`
@@ -105,14 +167,23 @@ Expected published contents:
 - `dist/`
 - `README.md`
 - `LICENSE`
+- `AGENTS.md`
+- `llms.txt`
+- `skills/`
+- `docs/`
 - `package.json`
+
+If new documentation or skills should be available to agents through the npm package, ensure `package.json.files` includes the path.
 
 ## Versioning and Publishing
 
-For patch fixes:
+For any runtime command change, bump the package version before publish.
+
+For documentation-only changes, bump only when the docs need to be shipped through npm immediately.
+
+Release sequence:
 
 ```bash
-# edit package.json version, e.g. 0.1.1 -> 0.1.2
 pnpm check
 pnpm build
 pnpm pack --dry-run
@@ -135,7 +206,7 @@ pnpm dlx @marcuscastelo/wt@<version> --help
 
 ## Smoke Tests
 
-### Worktree and `.env` seed smoke test
+### Worktree and `.env` seed smoke
 
 From the Container Tracker canonical checkout:
 
@@ -167,16 +238,6 @@ smoke/wt-global-env-smoke
 .env copied
 ```
 
-Compare without exposing secrets:
-
-```bash
-cmp -s \
-  /home/marucs/Development/Castro/container-tracker/.env \
-  /home/marucs/Development/Castro/wt-smoke-global/wt-global-env-smoke/.env \
-  && echo ".env is identical" \
-  || echo ".env differs"
-```
-
 Cleanup:
 
 ```bash
@@ -186,49 +247,67 @@ rm -rf ../wt-smoke-global
 git worktree prune
 ```
 
-### Supabase isolated stack smoke test
+### Container Tracker stage/worktree smoke
+
+Inside a linked Container Tracker worktree:
 
 ```bash
-cd /home/marucs/Development/Castro/container-tracker
-
-npx -y @marcuscastelo/wt@<version> supabase config --isolated
-npx -y @marcuscastelo/wt@<version> supabase status --isolated
-npx -y @marcuscastelo/wt@<version> supabase start --isolated
-npx -y @marcuscastelo/wt@<version> supabase status --isolated
-npx -y @marcuscastelo/wt@<version> supabase status --isolated --env
-npx -y @marcuscastelo/wt@<version> supabase stop --isolated
-npx -y @marcuscastelo/wt@<version> supabase status --isolated
+pnpm run db:stage:status
+pnpm run db:stage:ensure
+pnpm run db:stage:refresh-local-snapshot
+pnpm run db:stage:rebuild
+pnpm run db:worktree:init
+pnpm run db:worktree:status
 ```
 
 Expected:
 
-- generated workdir under `.git/wt-local-envs/worktrees/<worktreeId>/supabase-workdir`
-- deterministic non-conflicting ports, usually `4xxxx`
-- no conflict with Container Tracker staging/canonical stack
+- stage project id starts with `ct_stage_`.
+- worktree dev project id starts with `ct_dev_`.
+- state version is `2`.
+- persisted state omits `envMap`.
 
-### DB emancipation smoke test
-
-Use a backup before writing `.env`:
+### Container Tracker emancipation/rejoin smoke
 
 ```bash
-cd /home/marucs/Development/Castro/container-tracker
-cp .env /tmp/container-tracker.env.before-wt
-
-npx -y @marcuscastelo/wt@<version> db emancipate
-grep -n "WT MANAGED ENV" -A30 .env
-
-npx -y @marcuscastelo/wt@<version> db rejoin
-
-diff -u /tmp/container-tracker.env.before-wt .env || true
-npx -y @marcuscastelo/wt@<version> supabase status --isolated
+pnpm run db:rejoin
+pnpm run db:worktree:status
+pnpm run db:emancipate
+pnpm run db:worktree:status
+pnpm run db:rejoin
+pnpm run db:worktree:status
 ```
 
 Expected:
 
-- `db emancipate` adds one marker-scoped block.
-- `db rejoin` removes only that block.
-- No user-owned `.env` assignments outside the marker block are removed.
-- Final diff is empty or newline-only.
+- after `db:emancipate`, mode is `emancipated`.
+- after `db:emancipate`, `CT_SUPABASE_PROJECT_ID` points to `ct_dev_*`.
+- after `db:rejoin`, mode is `staging`.
+- after `db:rejoin`, `CT_SUPABASE_PROJECT_ID` points to `ct_stage_*`.
+
+### Active Supabase smoke
+
+```bash
+pnpm run db:rejoin
+pnpm run supabase:active:start
+pnpm run supabase:active:status
+pnpm run supabase:active:status:env
+pnpm run supabase:active:stop || true
+
+pnpm run db:emancipate
+pnpm run supabase:active:stop
+pnpm run db:worktree:status
+pnpm run supabase:active:start
+pnpm run db:worktree:status
+pnpm run db:rejoin
+```
+
+Expected:
+
+- active start in staging ensures shared staging is running.
+- active stop in staging refuses to stop shared staging.
+- active stop in emancipated mode stops the dev stack and marks it stopped/preserved.
+- active start in emancipated mode reattaches/restarts the dev stack and marks it running.
 
 ## Security Rules
 
@@ -237,37 +316,40 @@ Expected:
 - Managed `.env` writes must be marker-scoped.
 - `db rejoin` must never delete user-owned assignments outside the managed block.
 - Worktree destroy must refuse dirty state unless `--force` is explicit.
+- `wt supabase stop` must refuse to stop shared staging from `mode: staging`.
 
 ## Commit Policy
 
 Use focused commits:
 
 ```text
-feat: add setup command
-feat: add legacy config migration
-fix: preserve user env assignments outside managed block
-chore: release 0.1.1
+feat: add active supabase start stop commands
+fix: omit env maps from persisted worktree state
+chore: release 0.12.0
+docs: record Container Tracker PR 529 integration
 ```
 
-Do not mix unrelated changes. For Container Tracker PRs, separate:
+Do not mix unrelated changes.
+
+For Container Tracker wrapper migration PRs, separate:
 
 - `wt` wrapper migration
+- package manager/pnpm CI alignment
 - agent skill additions
 - unrelated formatter churn
 - lockfile churn
 
 ## Container Tracker PR Hygiene
 
-For a wrapper migration PR, changed files should normally be limited to:
+For wrapper migration PRs, changed files should normally be limited to:
 
 - `package.json`
 - `pnpm-lock.yaml`
 - `pnpm-workspace.yaml`, only if release-age policy requires it
+- `wt.config.json`
+- CI workflow files only if package manager alignment requires it
 
-Avoid unrelated files such as:
-
-- `tools/codex-skills-global/**`
-- unrelated OpenAI/model resolver formatting
+Avoid unrelated code changes.
 
 If `pnpm-lock.yaml` changes unrelated transitive versions, restore and regenerate narrowly:
 
@@ -279,10 +361,27 @@ pnpm add -D @marcuscastelo/wt@<version> --lockfile-only --ignore-scripts
 Then re-run:
 
 ```bash
+pnpm install --frozen-lockfile --ignore-scripts
 pnpm run type-check
 pnpm run architecture:boundary-scan
-pnpm run supabase:status
-pnpm run db:emancipate
-pnpm run db:rejoin
-pnpm run supabase:status
+```
+
+## Pnpm CI Rule
+
+If `package.json` contains `packageManager`, do not also pass a conflicting version to `pnpm/action-setup`.
+
+Correct:
+
+```yaml
+- name: Setup pnpm
+  uses: pnpm/action-setup@v4
+```
+
+Incorrect when `packageManager` says `pnpm@11.1.3`:
+
+```yaml
+- name: Setup pnpm
+  uses: pnpm/action-setup@v4
+  with:
+    version: 9
 ```
