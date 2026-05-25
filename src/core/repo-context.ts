@@ -1,4 +1,5 @@
 import path from "node:path";
+import { loadConfig } from "./config.js";
 import {
   getCurrentGitBranch,
   getGitCommonDir,
@@ -8,6 +9,8 @@ import {
   resolveMainRepoPath,
 } from "./git.js";
 import { buildWorktreeId } from "./identity.js";
+
+export const DEFAULT_RUNTIME_ROOT_DIR_NAME = "wt-local-envs";
 
 export interface RepoContext {
   cwd: string;
@@ -21,6 +24,7 @@ export interface RepoContext {
   mainRepoPath: string;
   worktreeId: string;
   runtimeRoot: string;
+  runtimeRootDirName: string;
   worktreeRuntimeRoot: string;
   statePath: string;
   envPath: string;
@@ -42,7 +46,9 @@ export async function getRepoContext(
   const mainRepoPath = isLinkedWorktree ? await resolveMainRepoPath(gitDir) : repoRoot;
   const worktreePath = repoRoot;
   const worktreeId = buildWorktreeId(worktreePath);
-  const runtimeRoot = path.join(gitCommonDir, "wt-local-envs");
+  const { config } = await loadConfig(worktreePath);
+  const runtimeRootDirName = config.runtime?.rootDirName ?? DEFAULT_RUNTIME_ROOT_DIR_NAME;
+  const runtimeRoot = path.join(gitCommonDir, runtimeRootDirName);
   const worktreeRuntimeRoot = path.join(runtimeRoot, "worktrees", worktreeId);
 
   return {
@@ -57,6 +63,7 @@ export async function getRepoContext(
     mainRepoPath: path.resolve(mainRepoPath),
     worktreeId,
     runtimeRoot,
+    runtimeRootDirName,
     worktreeRuntimeRoot,
     statePath: path.join(worktreePath, ".worktree-state.json"),
     envPath: path.join(worktreePath, ".env"),
