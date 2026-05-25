@@ -1,6 +1,6 @@
 {
   "name": "@marcuscastelo/wt",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "description": "Reusable Git worktree orchestration CLI with managed local env support.",
   "license": "MIT",
@@ -35,7 +35,7 @@
     "access": "public"
   },
   "scripts": {
-    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "clean": "rm -rf dist",
     "build": "pnpm run clean && tsc -p tsconfig.build.json",
     "dev": "tsx src/cli.ts",
     "type-check": "tsc -p tsconfig.json --noEmit",
