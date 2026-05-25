@@ -1,4 +1,5 @@
 import path from "node:path";
+import { type SupabasePorts } from "../adapters/supabase/supabase-config.js";
 import { requiredSupabaseEnvValue } from "../adapters/supabase/supabase-env.js";
 import { ensureStageEnvironment, getStageDefinition } from "../adapters/supabase/supabase-stage.js";
 import { loadConfig } from "../core/config.js";
@@ -89,7 +90,7 @@ async function normalizeWorktreeState(
       projectId: typeof rawStaging.projectId === "string" ? rawStaging.projectId : stageDefinition.projectId,
       workdir: typeof rawStaging.workdir === "string" ? rawStaging.workdir : stageDefinition.workdir,
       snapshotPath: typeof rawStaging.snapshotPath === "string" ? rawStaging.snapshotPath : stageDefinition.snapshotPath,
-      ports: isRecord(rawStaging.ports) ? toNumberRecord(rawStaging.ports) : toNumberRecord(stageDefinition.ports),
+      ports: isRecord(rawStaging.ports) ? toNumberRecord(rawStaging.ports) : supabasePortsToRecord(stageDefinition.ports),
       status: toRuntimeStatus(rawStaging.status, stageDefinition.running ? "running" : "stopped"),
       envMap: isRecord(rawStaging.envMap) ? toStringRecord(rawStaging.envMap) : null,
     },
@@ -162,6 +163,18 @@ async function getDefaultEmancipated(context: RepoContext): Promise<{
   return {
     projectId: `${prefix}${context.worktreeId}`,
     workdir: path.join(context.worktreeRuntimeRoot, "project"),
+  };
+}
+
+function supabasePortsToRecord(ports: SupabasePorts): Record<string, number> {
+  return {
+    api: ports.api,
+    db: ports.db,
+    shadow: ports.shadow,
+    studio: ports.studio,
+    inbucket: ports.inbucket,
+    analytics: ports.analytics,
+    pooler: ports.pooler,
   };
 }
 
