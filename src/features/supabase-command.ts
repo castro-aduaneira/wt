@@ -7,6 +7,7 @@ import { runCapture, runInherit } from "../core/command.js";
 import { loadConfig } from "../core/config.js";
 import { pathExists } from "../core/fs.js";
 import { getRepoContext } from "../core/repo-context.js";
+import { getActiveSupabaseWorkdir } from "./worktree-db-command.js";
 
 export async function inspectSupabaseConfig(input: {
   cwd: string;
@@ -57,10 +58,12 @@ export async function showSupabaseStatus(input: {
   isolated: boolean;
 }): Promise<void> {
   const context = await getRepoContext(input.cwd, { requireLinkedWorktree: false });
-  const resolved = await resolveSupabaseWorkdir(context.worktreePath, {
-    isolated: input.isolated,
-    withAnalytics: false,
-  });
+  const resolved = input.isolated
+    ? await resolveSupabaseWorkdir(context.worktreePath, {
+        isolated: true,
+        withAnalytics: false,
+      })
+    : await getActiveSupabaseWorkdir({ cwd: input.cwd });
   const args = buildSupabaseStatusArgs({ workdir: resolved.workdir, envOutput: input.envOutput });
 
   try {
