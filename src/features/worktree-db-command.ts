@@ -62,6 +62,37 @@ export async function getActiveSupabaseWorkdir(input: { cwd: string }): Promise<
   return { workdir: state.staging.workdir, mode: "staging" };
 }
 
+export async function startActiveSupabase(input: {
+  cwd: string;
+  withAnalytics: boolean;
+}): Promise<void> {
+  const active = await getActiveSupabaseWorkdir({ cwd: input.cwd });
+  await runInherit(
+    "npx",
+    buildSupabaseStartArgs({ workdir: active.workdir, withAnalytics: input.withAnalytics }),
+    active.workdir,
+  );
+}
+
+export async function stopActiveSupabase(input: {
+  cwd: string;
+  noBackup: boolean;
+}): Promise<void> {
+  const active = await getActiveSupabaseWorkdir({ cwd: input.cwd });
+
+  if (active.mode !== "emancipated") {
+    throw new Error(
+      "Refusing to stop shared staging from a non-emancipated worktree. Use `wt db rejoin` or operate on the isolated stack only.",
+    );
+  }
+
+  await runInherit(
+    "npx",
+    buildSupabaseStopArgs({ workdir: active.workdir, noBackup: input.noBackup }),
+    active.workdir,
+  );
+}
+
 export async function initWorktreeDatabase(input: {
   cwd: string;
   withAnalytics: boolean;
