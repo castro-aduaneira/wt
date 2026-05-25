@@ -1,17 +1,45 @@
+import fs from "node:fs/promises";
 import path from "node:path";
-import { type SupabasePorts } from "../adapters/supabase/supabase-config.js";
-import { getSupabaseStatusEnvMap } from "../adapters/supabase/supabase-db.js";
+import { renderSupabaseConfig, type SupabasePorts } from "../adapters/supabase/supabase-config.js";
+import {
+  dumpDatabaseToFile,
+  getSupabaseStatusEnvMap,
+  restoreBackupIntoRunningProject,
+} from "../adapters/supabase/supabase-db.js";
 import { requiredSupabaseEnvValue } from "../adapters/supabase/supabase-env.js";
-import { ensureStageEnvironment, getStageDefinition, isSupabaseProjectRunning } from "../adapters/supabase/supabase-stage.js";
-import { buildSupabaseStopArgs } from "../adapters/supabase/supabase-runtime.js";
+import {
+  ensureStageEnvironment,
+  getStageDefinition,
+  isSupabaseProjectRunning,
+} from "../adapters/supabase/supabase-stage.js";
+import {
+  buildSupabaseStartArgs,
+  buildSupabaseStopArgs,
+  purgeSupabaseProjectResources,
+} from "../adapters/supabase/supabase-runtime.js";
 import { runInherit } from "../core/command.js";
 import { loadConfig } from "../core/config.js";
 import { pathExists } from "../core/fs.js";
+import { hashString } from "../core/identity.js";
 import { upsertWorktreeManagedEnvFile } from "../core/managed-env.js";
 import { getRepoContext, type RepoContext } from "../core/repo-context.js";
 import { readFirstState, writeState, type WorktreeStateV2 } from "../core/state.js";
 
 const DEFAULT_WORKTREE_PROJECT_ID_PREFIX = "wt_";
+const DEV_PORT_BASE_MIN = 40000;
+const DEV_PORT_BASE_MAX = 64980;
+const DEV_PORT_BLOCK_SIZE = 20;
+const EXCLUDED_SUPABASE_ENTRIES = new Set(["config.toml", ".temp", ".branches"]);
+
+const DEV_PORT_OFFSETS = Object.freeze({
+  shadow: 0,
+  api: 1,
+  db: 2,
+  studio: 3,
+  inbucket: 4,
+  analytics: 7,
+  pooler: 9,
+});
 
 export async function showWorktreeStatus(input: { cwd: string }): Promise<void> {
   const context = await getRepoContext(input.cwd, { requireLinkedWorktree: true });
@@ -26,20 +54,68 @@ export async function initWorktreeDatabase(input: {
 }): Promise<void> {
   const context = await getRepoContext(input.cwd, { requireLinkedWorktree: true });
 
-  if (!(await pathExists(context.envPath))) {
-    throw new Error(
-      `Missing .env at ${context.envPath}. Run wt init first so the base file exists before environment binding.`,
-    );
-  }
+  await assertEnvFileExists(context);
 
   const previousState = await getWorktreeStateOrDefault(context);
   const stage = await ensureStageEnvironment(context, {
     withAnalytics: input.withAnalytics,
   });
+  const nextState = await buildStagingState(context, previousState, stage);
+
+  await persistWorktreeEnvironment(context, nextState);
+  console.log(`worktree initialized in shared staging mode: ${nextState.worktreeId}`);
+}
+
+export async function emancipateWorktreeDatabase(input: {
+  cwd: string;
+  fresh: boolean;
+  withAnalytics: boolean;
+}): Promise<void> {
+  const context = await getRepoContext(input.cwd, { requireLinkedWorktree: true });
+
+  await assertEnvFileExists(context);
+
+  const previousState = await getWorktreeStateOrDefault(context);
+  const stage = await ensureStageEnvironment(context, {
+    withAnalytics: input.withAnalytics,
+  });
+
+  if (!(await pathExists(stage.snapshotPath))) {
+    await dumpDatabaseToFile({
+      workdir: stage.workdir,
+      outputPath: stage.snapshotPath,
+    });
+  }
+
+  if (!input.fresh && previousState.emancipated.status !== "absent") {
+    const running = await startExistingEmancipatedProject(context, previousState, input.withAnalytics);
+    const nextState = await normalizeWorktreeState(
+      {
+        ...previousState,
+        mode: "emancipated",
+        staging: {
+          projectId: stage.projectId,
+          workdir: stage.workdir,
+          snapshotPath: stage.snapshotPath,
+          ports: stage.ports,
+          status: "running",
+          envMap: stage.envMap,
+        },
+        emancipated: running,
+      },
+      context,
+    );
+
+    await persistWorktreeEnvironment(context, nextState);
+    console.log(`worktree reattached to preserved dev stack: ${running.projectId}`);
+    return;
+  }
+
+  const emancipated = await createFreshEmancipatedEnvironment(context, stage, previousState, input.withAnalytics);
   const nextState = await normalizeWorktreeState(
     {
       ...previousState,
-      mode: "staging",
+      mode: "emancipated",
       staging: {
         projectId: stage.projectId,
         workdir: stage.workdir,
@@ -48,17 +124,13 @@ export async function initWorktreeDatabase(input: {
         status: "running",
         envMap: stage.envMap,
       },
+      emancipated,
     },
     context,
   );
 
-  await upsertWorktreeManagedEnvFile({
-    envPath: context.envPath,
-    values: renderWorktreeEnvValues(nextState),
-  });
-  await writeWorktreeState(context, nextState);
-
-  console.log(`worktree initialized in shared staging mode: ${nextState.worktreeId}`);
+  await persistWorktreeEnvironment(context, nextState);
+  console.log(`worktree emancipated with isolated stack: ${emancipated.projectId}`);
 }
 
 export async function rejoinWorktreeDatabase(input: {
@@ -67,11 +139,7 @@ export async function rejoinWorktreeDatabase(input: {
 }): Promise<void> {
   const context = await getRepoContext(input.cwd, { requireLinkedWorktree: true });
 
-  if (!(await pathExists(context.envPath))) {
-    throw new Error(
-      `Missing .env at ${context.envPath}. Run wt init first so the base file exists before environment binding.`,
-    );
-  }
+  await assertEnvFileExists(context);
 
   const previousState = await getWorktreeStateOrDefault(context);
   const stage = await ensureStageEnvironment(context, {
@@ -108,11 +176,7 @@ export async function rejoinWorktreeDatabase(input: {
     context,
   );
 
-  await upsertWorktreeManagedEnvFile({
-    envPath: context.envPath,
-    values: renderWorktreeEnvValues(nextState),
-  });
-  await writeWorktreeState(context, nextState);
+  await persistWorktreeEnvironment(context, nextState);
 
   if (previousState.mode === "staging") {
     console.log("worktree already using shared staging");
@@ -120,6 +184,44 @@ export async function rejoinWorktreeDatabase(input: {
   }
 
   console.log(`worktree rejoined shared staging: ${stage.projectId}`);
+}
+
+async function assertEnvFileExists(context: RepoContext): Promise<void> {
+  if (!(await pathExists(context.envPath))) {
+    throw new Error(
+      `Missing .env at ${context.envPath}. Run wt init first so the base file exists before environment binding.`,
+    );
+  }
+}
+
+async function buildStagingState(
+  context: RepoContext,
+  previousState: WorktreeStateV2,
+  stage: Awaited<ReturnType<typeof ensureStageEnvironment>>,
+): Promise<WorktreeStateV2> {
+  return normalizeWorktreeState(
+    {
+      ...previousState,
+      mode: "staging",
+      staging: {
+        projectId: stage.projectId,
+        workdir: stage.workdir,
+        snapshotPath: stage.snapshotPath,
+        ports: stage.ports,
+        status: "running",
+        envMap: stage.envMap,
+      },
+    },
+    context,
+  );
+}
+
+async function persistWorktreeEnvironment(context: RepoContext, state: WorktreeStateV2): Promise<void> {
+  await upsertWorktreeManagedEnvFile({
+    envPath: context.envPath,
+    values: renderWorktreeEnvValues(state),
+  });
+  await writeWorktreeState(context, state);
 }
 
 async function getWorktreeStateOrDefault(context: RepoContext): Promise<WorktreeStateV2> {
@@ -161,7 +263,7 @@ async function normalizeWorktreeState(
     emancipated: {
       projectId: typeof rawEmancipated.projectId === "string" ? rawEmancipated.projectId : defaultEmancipated.projectId,
       workdir: typeof rawEmancipated.workdir === "string" ? rawEmancipated.workdir : defaultEmancipated.workdir,
-      ports: isRecord(rawEmancipated.ports) ? toNumberRecord(rawEmancipated.ports) : null,
+      ports: isRecord(rawEmancipated.ports) ? toNumberRecord(rawEmancipated.ports) : defaultEmancipated.ports,
       status: toRuntimeStatus(rawEmancipated.status, "absent"),
       preserved: typeof rawEmancipated.preserved === "boolean" ? rawEmancipated.preserved : false,
       envMap: isRecord(rawEmancipated.envMap) ? toStringRecord(rawEmancipated.envMap) : null,
@@ -172,32 +274,162 @@ async function normalizeWorktreeState(
   };
 }
 
+async function createFreshEmancipatedEnvironment(
+  context: RepoContext,
+  stage: Awaited<ReturnType<typeof ensureStageEnvironment>>,
+  previousState: WorktreeStateV2,
+  withAnalytics: boolean,
+): Promise<WorktreeStateV2["emancipated"]> {
+  const definition = await prepareEmancipatedDefinition(context, previousState.emancipated);
+
+  await purgeSupabaseProjectResources({
+    projectId: definition.projectId,
+    cwd: context.worktreePath,
+  });
+
+  if (await pathExists(definition.workdir)) {
+    await fs.rm(definition.workdir, { force: true, recursive: true });
+  }
+
+  await materializeEmancipatedProject(context, definition, withAnalytics);
+  await runInherit(
+    "npx",
+    buildSupabaseStartArgs({ workdir: definition.workdir, withAnalytics }),
+    definition.workdir,
+  );
+  await restoreBackupIntoRunningProject({
+    workdir: definition.workdir,
+    backupPath: stage.snapshotPath,
+  });
+
+  return {
+    ...definition,
+    status: "running",
+    preserved: true,
+    envMap: await getSupabaseStatusEnvMap(definition.workdir),
+  };
+}
+
+async function startExistingEmancipatedProject(
+  context: RepoContext,
+  previousState: WorktreeStateV2,
+  withAnalytics: boolean,
+): Promise<WorktreeStateV2["emancipated"]> {
+  const definition = await resolveEmancipatedEnvironment(context, previousState);
+
+  if (!(await pathExists(definition.workdir))) {
+    const stage = await ensureStageEnvironment(context, { withAnalytics });
+    await dumpDatabaseToFile({ workdir: stage.workdir, outputPath: stage.snapshotPath });
+    return createFreshEmancipatedEnvironment(context, stage, previousState, withAnalytics);
+  }
+
+  await materializeEmancipatedProject(context, definition, withAnalytics);
+
+  if (!(await isSupabaseProjectRunning(definition.workdir))) {
+    await runInherit(
+      "npx",
+      buildSupabaseStartArgs({ workdir: definition.workdir, withAnalytics }),
+      definition.workdir,
+    );
+  }
+
+  return {
+    ...definition,
+    status: "running",
+    preserved: true,
+    envMap: await getSupabaseStatusEnvMap(definition.workdir),
+  };
+}
+
 async function resolveEmancipatedEnvironment(
   context: RepoContext,
   previousState: WorktreeStateV2,
 ): Promise<WorktreeStateV2["emancipated"]> {
-  const defaultEmancipated = await getDefaultEmancipated(context);
-  const base = {
-    projectId: previousState.emancipated.projectId || defaultEmancipated.projectId,
-    workdir: previousState.emancipated.workdir || defaultEmancipated.workdir,
-    ports: previousState.emancipated.ports,
-    preserved: previousState.emancipated.preserved,
-    envMap: null,
-  };
+  const definition = await prepareEmancipatedDefinition(context, previousState.emancipated);
 
-  if (!(await pathExists(path.join(base.workdir, "supabase", "config.toml")))) {
-    return { ...base, status: "absent" };
+  if (!(await pathExists(path.join(definition.workdir, "supabase", "config.toml")))) {
+    return { ...definition, status: "absent", preserved: false, envMap: null };
   }
 
-  if (!(await isSupabaseProjectRunning(base.workdir))) {
-    return { ...base, status: "stopped" };
+  if (!(await isSupabaseProjectRunning(definition.workdir))) {
+    return { ...definition, status: "stopped", preserved: true, envMap: null };
   }
 
   return {
-    ...base,
+    ...definition,
     status: "running",
-    envMap: await getSupabaseStatusEnvMap(base.workdir),
+    preserved: true,
+    envMap: await getSupabaseStatusEnvMap(definition.workdir),
   };
+}
+
+async function prepareEmancipatedDefinition(
+  context: RepoContext,
+  existingDefinition: WorktreeStateV2["emancipated"] | null,
+): Promise<WorktreeStateV2["emancipated"]> {
+  const defaultEmancipated = await getDefaultEmancipated(context);
+  const ports = existingDefinition?.ports ?? defaultEmancipated.ports;
+
+  return {
+    projectId: defaultEmancipated.projectId,
+    workdir: defaultEmancipated.workdir,
+    ports,
+    status: existingDefinition?.status ?? "absent",
+    preserved: existingDefinition?.preserved ?? false,
+    envMap: null,
+  };
+}
+
+async function materializeEmancipatedProject(
+  context: RepoContext,
+  definition: WorktreeStateV2["emancipated"],
+  withAnalytics: boolean,
+): Promise<void> {
+  const sourceSupabaseDir = path.join(context.worktreePath, "supabase");
+  const targetSupabaseDir = path.join(definition.workdir, "supabase");
+  const rawTemplate = await fs.readFile(path.join(sourceSupabaseDir, "config.toml"), "utf8");
+
+  await fs.mkdir(targetSupabaseDir, { recursive: true });
+  await fs.mkdir(path.join(targetSupabaseDir, ".temp"), { recursive: true });
+  await ensureSupabaseSymlinkSet(sourceSupabaseDir, targetSupabaseDir);
+  await fs.writeFile(
+    path.join(targetSupabaseDir, "config.toml"),
+    renderSupabaseConfig(rawTemplate, {
+      projectId: definition.projectId,
+      ports: recordToSupabasePorts(definition.ports),
+      analyticsEnabled: withAnalytics,
+    }),
+  );
+}
+
+async function ensureSupabaseSymlinkSet(sourceSupabaseDir: string, targetSupabaseDir: string): Promise<void> {
+  const entries = await fs.readdir(sourceSupabaseDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (EXCLUDED_SUPABASE_ENTRIES.has(entry.name)) {
+      continue;
+    }
+
+    const sourcePath = path.join(sourceSupabaseDir, entry.name);
+    const targetPath = path.join(targetSupabaseDir, entry.name);
+    const relativeSource = path.relative(path.dirname(targetPath), sourcePath);
+
+    if (await pathExists(targetPath)) {
+      const stat = await fs.lstat(targetPath);
+
+      if (stat.isSymbolicLink()) {
+        const currentTarget = await fs.readlink(targetPath);
+
+        if (currentTarget === relativeSource) {
+          continue;
+        }
+      }
+
+      await fs.rm(targetPath, { force: true, recursive: true });
+    }
+
+    await fs.symlink(relativeSource, targetPath, entry.isDirectory() ? "dir" : "file");
+  }
 }
 
 function renderWorktreeEnvValues(state: WorktreeStateV2): Record<string, string> {
@@ -249,13 +481,50 @@ function sanitizeStateForPersistence(state: WorktreeStateV2): WorktreeStateV2 {
 async function getDefaultEmancipated(context: RepoContext): Promise<{
   projectId: string;
   workdir: string;
+  ports: Record<string, number>;
 }> {
   const { config } = await loadConfig(context.worktreePath);
   const prefix = config.runtime?.worktreeProjectIdPrefix ?? DEFAULT_WORKTREE_PROJECT_ID_PREFIX;
+  const projectId = `${prefix}${context.worktreeId}`;
 
   return {
-    projectId: `${prefix}${context.worktreeId}`,
+    projectId,
     workdir: path.join(context.worktreeRuntimeRoot, "project"),
+    ports: buildPortMap(allocatePortBase(projectId)),
+  };
+}
+
+function allocatePortBase(projectId: string): number {
+  const slotCount = Math.floor((DEV_PORT_BASE_MAX - DEV_PORT_BASE_MIN) / DEV_PORT_BLOCK_SIZE) + 1;
+  const slotIndex = Number.parseInt(hashString(projectId, 6), 16) % slotCount;
+  return DEV_PORT_BASE_MIN + slotIndex * DEV_PORT_BLOCK_SIZE;
+}
+
+function buildPortMap(basePort: number): Record<string, number> {
+  return {
+    shadow: basePort + DEV_PORT_OFFSETS.shadow,
+    api: basePort + DEV_PORT_OFFSETS.api,
+    db: basePort + DEV_PORT_OFFSETS.db,
+    studio: basePort + DEV_PORT_OFFSETS.studio,
+    inbucket: basePort + DEV_PORT_OFFSETS.inbucket,
+    analytics: basePort + DEV_PORT_OFFSETS.analytics,
+    pooler: basePort + DEV_PORT_OFFSETS.pooler,
+  };
+}
+
+function recordToSupabasePorts(ports: Record<string, number> | null): SupabasePorts {
+  if (!ports) {
+    throw new Error("Cannot render Supabase config without allocated ports.");
+  }
+
+  return {
+    shadow: requiredNumber(ports.shadow, "shadow"),
+    api: requiredNumber(ports.api, "api"),
+    db: requiredNumber(ports.db, "db"),
+    studio: requiredNumber(ports.studio, "studio"),
+    inbucket: requiredNumber(ports.inbucket, "inbucket"),
+    analytics: requiredNumber(ports.analytics, "analytics"),
+    pooler: requiredNumber(ports.pooler, "pooler"),
   };
 }
 
@@ -269,6 +538,14 @@ function supabasePortsToRecord(ports: SupabasePorts): Record<string, number> {
     analytics: ports.analytics,
     pooler: ports.pooler,
   };
+}
+
+function requiredNumber(value: unknown, label: string): number {
+  if (typeof value !== "number") {
+    throw new Error(`Missing allocated Supabase port: ${label}`);
+  }
+
+  return value;
 }
 
 function toRuntimeStatus(value: unknown, fallback: "absent" | "stopped" | "running"):
