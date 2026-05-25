@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import { dbCommand, ensureStage, rebuildStage, refreshStageLocalSnapshot, showStageStatus } from "./features/db-command.js";
+import { ensureStage, rebuildStage, refreshStageLocalSnapshot, showStageStatus } from "./features/db-command.js";
 import { destroyWorktree } from "./features/destroy-worktree.js";
 import { showEnvStatus } from "./features/env-status.js";
 import { initWorktree } from "./features/init-worktree.js";
@@ -9,14 +9,14 @@ import { migrateConfig } from "./features/migrate-command.js";
 import { type NewWorktreeOptions, newWorktree } from "./features/new-worktree.js";
 import { setupConfig } from "./features/setup-command.js";
 import { inspectSupabaseConfig, showSupabaseStatus, startSupabase, stopSupabase } from "./features/supabase-command.js";
-import { initWorktreeDatabase, rejoinWorktreeDatabase, showWorktreeStatus } from "./features/worktree-db-command.js";
+import { emancipateWorktreeDatabase, initWorktreeDatabase, rejoinWorktreeDatabase, showWorktreeStatus } from "./features/worktree-db-command.js";
 
 const program = new Command();
 
 program
   .name("wt")
   .description("Reusable Git worktree orchestration CLI")
-  .version("0.9.0");
+  .version("0.10.0");
 
 program
   .command("setup")
@@ -128,8 +128,13 @@ db
   .command("emancipate")
   .description("Create or attach an isolated database stack for this worktree")
   .option("--fresh", "discard previous isolated stack and create a fresh one")
-  .action(async (options: { fresh?: boolean }) => {
-    await dbCommand("emancipate", { cwd: process.cwd(), fresh: options.fresh === true });
+  .option("--with-analytics", "start analytics instead of using the low-RAM exclude set")
+  .action(async (options: { fresh?: boolean; withAnalytics?: boolean }) => {
+    await emancipateWorktreeDatabase({
+      cwd: process.cwd(),
+      fresh: options.fresh === true,
+      withAnalytics: options.withAnalytics === true,
+    });
   });
 
 db
