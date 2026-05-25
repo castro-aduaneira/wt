@@ -319,6 +319,7 @@ This repository includes portable `SKILL.md` files under `skills/`:
 skills/wt-worktree/SKILL.md
 skills/wt-supabase/SKILL.md
 skills/wt-container-tracker/SKILL.md
+skills/wt-repo-migration/SKILL.md
 ```
 
 Use these skills in LLM environments that support skill imports. They contain exact command sequences, safety rules, and PR planning guidance.
