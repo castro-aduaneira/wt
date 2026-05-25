@@ -1,12 +1,12 @@
 # wt
 
-Reusable CLI for Git worktree orchestration and isolated Supabase local stacks.
+Reusable CLI for Git worktree orchestration and local Supabase environments.
 
-`wt` started as an extraction of the Container Tracker worktree workflow. It provides a small CLI for creating worktrees, seeding local files explicitly, managing per-worktree state, migrating legacy worktree configs, and running isolated Supabase stacks without port conflicts.
+`wt` started as an extraction of the Container Tracker worktree workflow. It provides a CLI for creating worktrees, seeding local files explicitly, managing per-worktree state, migrating legacy worktree configs, and running Supabase stacks without port conflicts.
 
 ## Install
 
-Project-local install is recommended for team repos:
+Project-local install is recommended for team repositories:
 
 ```bash
 pnpm add -D @marcuscastelo/wt
@@ -20,7 +20,7 @@ npx -y @marcuscastelo/wt --help
 pnpm dlx @marcuscastelo/wt --help
 ```
 
-Global install, if your `npm` is a real npm binary:
+Global install, when `npm` is a real npm binary:
 
 ```bash
 npm install -g @marcuscastelo/wt
@@ -38,9 +38,9 @@ pnpm build
 pnpm dev -- --help
 ```
 
-## Add wt to your repository
+## Add wt to a repository
 
-Install the package:
+Install:
 
 ```bash
 pnpm add -D @marcuscastelo/wt
@@ -58,16 +58,18 @@ Create a config with safe defaults:
 pnpm exec wt setup --yes
 ```
 
-Migrate from the legacy Container Tracker-style config:
+Migrate from legacy Container Tracker-style config:
 
 ```bash
 pnpm exec wt migrate --dry-run
 pnpm exec wt migrate
 ```
 
-The legacy file `.worktree-initialization.toml` is read automatically when `wt.config.json` is absent. Use `wt migrate --remove-legacy` only when the generated config has been reviewed.
+The legacy file `.worktree-initialization.toml` is read automatically when `wt.config.json` is absent. Use `wt migrate --remove-legacy` only after reviewing the generated config.
 
-## Commands
+## Command map
+
+Core worktree commands:
 
 ```bash
 wt setup
@@ -76,10 +78,32 @@ wt init
 wt new <source>
 wt destroy
 wt env status
+```
+
+Supabase adapter commands:
+
+```bash
 wt supabase config
-wt supabase status
+wt supabase config --isolated
 wt supabase start
+wt supabase start --isolated
+wt supabase status
+wt supabase status --env
+wt supabase status --isolated
+wt supabase status --isolated --env
 wt supabase stop
+wt supabase stop --isolated
+```
+
+Database environment commands:
+
+```bash
+wt db stage status
+wt db stage ensure
+wt db stage refresh-local-snapshot
+wt db stage rebuild
+wt db worktree init
+wt db worktree status
 wt db emancipate
 wt db rejoin
 ```
@@ -110,6 +134,27 @@ Create `wt.config.json` in a repository that wants to use the CLI:
       "pnpm install"
     ]
   },
+  "runtime": {
+    "rootDirName": "wt-local-envs",
+    "stageProjectIdPrefix": "wt_stage_",
+    "worktreeProjectIdPrefix": "wt_dev_"
+  },
+  "supabase": {
+    "enabled": true,
+    "configPath": "supabase/config.toml"
+  }
+}
+```
+
+Container Tracker uses repo-specific runtime names:
+
+```json
+{
+  "runtime": {
+    "rootDirName": "ct-local-envs",
+    "stageProjectIdPrefix": "ct_stage_",
+    "worktreeProjectIdPrefix": "ct_dev_"
+  },
   "supabase": {
     "enabled": true,
     "configPath": "supabase/config.toml"
@@ -119,29 +164,57 @@ Create `wt.config.json` in a repository that wants to use the CLI:
 
 ## Worktree usage
 
+Create a worktree from the canonical checkout:
+
 ```bash
 wt new tasks/my-feature.md
 cd ../wt/my-feature
 wt env status
 ```
 
-For LLM-driven work, prefer:
+For LLM-driven work where repo hooks should be skipped:
 
 ```bash
 wt new tasks/<task-or-prd>.md --branch-prefix feat/ --no-hooks
 ```
 
-Then run repo-specific validation inside the generated worktree.
-
-## Supabase usage
-
-Inspect the canonical Supabase config:
+When a GUI already created the Git worktree, do not run `wt new`. Run this inside the worktree:
 
 ```bash
-wt supabase config
+wt init
 ```
 
-Use an isolated generated Supabase workdir with deterministic ports:
+Conservative init without hooks:
+
+```bash
+wt init --no-hooks
+```
+
+Before abandoning or deleting a worktree:
+
+```bash
+wt db rejoin || true
+```
+
+If `wt` owns deletion:
+
+```bash
+wt destroy
+```
+
+Use force only for disposable branches:
+
+```bash
+wt destroy --force
+```
+
+## Supabase modes
+
+`wt` supports two Supabase command styles.
+
+### Isolated mode
+
+Use `--isolated` for legacy isolated workdirs. This materializes a generated Supabase workdir and deterministic ports under the worktree runtime root.
 
 ```bash
 wt supabase config --isolated
@@ -151,14 +224,55 @@ wt supabase status --isolated --env
 wt supabase stop --isolated
 ```
 
-Bind the current worktree `.env` to an isolated Supabase stack:
+### Active mode
+
+Without `--isolated`, `wt supabase` commands resolve the active environment from worktree state v2:
+
+- `mode: staging` uses shared staging.
+- `mode: emancipated` uses the worktree dev stack.
+
+```bash
+wt supabase start
+wt supabase status
+wt supabase status --env
+wt supabase stop
+```
+
+Safety rule: `wt supabase stop` refuses to stop shared staging from `mode: staging`. It stops only the worktree dev stack in `mode: emancipated`.
+
+## Stage and worktree database lifecycle
+
+Shared staging commands:
+
+```bash
+wt db stage status
+wt db stage ensure
+wt db stage refresh-local-snapshot
+wt db stage rebuild
+```
+
+Worktree environment commands:
+
+```bash
+wt db worktree init
+wt db worktree status
+```
+
+Move to an isolated dev stack:
 
 ```bash
 wt db emancipate
+```
+
+Return to shared staging:
+
+```bash
 wt db rejoin
 ```
 
-`wt db emancipate` writes a marked block to `.env`. `wt db rejoin` removes only that marked block and preserves user-owned assignments outside it.
+`wt db emancipate` writes a managed environment block into `.env`. `wt db rejoin` switches back to staging and stops the dev stack when needed. Managed writes are marker-scoped and must not delete user-owned assignments outside the block.
+
+Container Tracker uses a `WORKTREE ENV MANAGED BLOCK` with `CT_*` compatibility keys. Older `WT MANAGED ENV` blocks are treated as legacy and should not be introduced in new Container Tracker flows.
 
 ## GUI worktree hooks
 
@@ -169,60 +283,14 @@ Some GUIs and agent apps can run shell hooks around worktree lifecycle events. N
 | After worktree creation | `wt init --no-hooks` |
 | After worktree creation, full repo setup | `wt init` |
 | Before/after worktree deletion | `wt db rejoin || true` |
-| Worktree deletion command | `wt destroy` |
+| Worktree deletion command, only if delegated to wt | `wt destroy` |
 | Force deletion for disposable branches only | `wt destroy --force` |
 
-### t3code project actions
-
-If the GUI already creates the Git worktree, as in t3code project actions, do **not** use `wt new` in the action. Configure a project-scoped action like this:
-
-```text
-Name: wt-init
-Command: wt init
-Run automatically on worktree creation: enabled
-```
-
-For conservative setups where dependency install is handled elsewhere:
-
-```text
-Name: wt-init-lite
-Command: wt init --no-hooks
-Run automatically on worktree creation: enabled
-```
-
-For cleanup, add a separate manual or delete-lifecycle action when the GUI supports it:
-
-```text
-Name: wt-rejoin
-Command: wt db rejoin || true
-Run before/after worktree deletion: enabled, if available
-```
-
-Do not set `pnpm initialize-worktree` as the long-term hook once the repo has `wt.config.json`; use `wt init` instead. Do not set `wt destroy` as an automatic deletion hook if the GUI itself is already deleting the worktree.
-
-Recommended defaults for tools such as t3code, Codex App, Antigravity, or any GUI that supports worktree hooks:
-
-```bash
-# On worktree creation, conservative
-wt init --no-hooks
-
-# On worktree creation, full project bootstrap
-wt init
-
-# Before deleting a worktree
-wt db rejoin || true
-
-# Delete worktree safely, only if the GUI delegates deletion to wt
-wt destroy
-```
-
-Use `wt destroy --force` only for disposable branches. It discards local changes and unpushed commits.
-
-If your GUI already creates the Git worktree itself, use `wt init` as the post-create hook. If you want `wt` to create the worktree, configure the GUI/LLM to run `wt new <task-file-or-slug>` from the canonical checkout.
+If the GUI already creates the Git worktree, do not use `wt new` in the post-create action. If the GUI already deletes the worktree, do not also run `wt destroy` automatically.
 
 ## Instruct an LLM to use wt
 
-Paste this into your agent or repository instructions:
+Paste this into repository instructions:
 
 ```markdown
 When creating implementation branches in this repository, use `wt` instead of raw `git worktree` commands.
@@ -233,49 +301,103 @@ Default workflow:
    `wt new tasks/<task-name>.md --branch-prefix feat/`
 2. Enter the generated worktree.
 3. Check `wt env status`.
-4. If isolated Supabase is needed, run `wt db emancipate`.
-5. Run the repository's validation commands.
-6. Before deleting or abandoning a worktree, run `wt db rejoin`.
-7. Use `wt destroy` for clean deletion, or `wt destroy --force` only for disposable work.
+4. If the GUI already created the worktree, do not run `wt new`; run `wt init`.
+5. If isolated Supabase is needed, run `wt db emancipate`.
+6. Use `wt supabase status` and `wt supabase status --env` for the active environment.
+7. Run the repository validation commands.
+8. Before deleting or abandoning a worktree, run `wt db rejoin || true`.
+9. Use `wt destroy` for clean deletion only when `wt` owns deletion.
 
-When a GUI already created the Git worktree, do not run `wt new`; run `wt init` inside the worktree instead.
-
-Never delete or rewrite `.env` manually. `wt db emancipate` may add a `WT MANAGED ENV` block; `wt db rejoin` removes only that block.
+Never manually delete or rewrite `.env` to switch Supabase stacks. Use `wt db emancipate` and `wt db rejoin`.
 ```
 
 ## Skills for agents
 
-This repository includes skills under `skills/`:
+This repository includes portable `SKILL.md` files under `skills/`:
 
 ```text
 skills/wt-worktree/SKILL.md
 skills/wt-supabase/SKILL.md
+skills/wt-container-tracker/SKILL.md
 ```
 
-These are portable Markdown skills for agents that support `SKILL.md`-style imports. If your skill manager supports installing from a local path or GitHub repo, point it at the desired skill directory. Keep the skill text short and operational: when to use `wt`, exact commands, validation steps, and cleanup rules.
+Use these skills in LLM environments that support skill imports. They contain exact command sequences, safety rules, and PR planning guidance.
 
 ## Container Tracker compatibility
 
-Container Tracker can gradually replace wrappers like:
+Container Tracker PR #529 validated `@marcuscastelo/wt@^0.12.0` for the main DB/worktree migration.
+
+Recommended scripts from that PR:
 
 ```json
 {
-  "scripts": {
-    "supabase:start": "wt supabase start --isolated",
-    "supabase:stop": "wt supabase stop --isolated",
-    "supabase:status": "wt supabase status --isolated",
-    "supabase:status:env": "wt supabase status --isolated --env",
-    "db:emancipate": "wt db emancipate",
-    "db:rejoin": "wt db rejoin"
-  }
+  "supabase:start": "wt supabase start --isolated",
+  "supabase:active:start": "wt supabase start",
+  "supabase:start:analytics": "wt supabase start --isolated --with-analytics",
+  "supabase:stop": "wt supabase stop --isolated",
+  "supabase:active:stop": "wt supabase stop",
+  "supabase:status": "wt supabase status --isolated",
+  "supabase:active:status": "wt supabase status",
+  "supabase:status:env": "wt supabase status --isolated --env",
+  "supabase:active:status:env": "wt supabase status --env",
+  "db:worktree:init": "wt db worktree init",
+  "db:worktree:status": "wt db worktree status",
+  "db:stage:ensure": "wt db stage ensure",
+  "db:stage:status": "wt db stage status",
+  "db:stage:refresh-local-snapshot": "wt db stage refresh-local-snapshot",
+  "db:stage:rebuild": "wt db stage rebuild",
+  "db:emancipate": "wt db emancipate",
+  "db:rejoin": "wt db rejoin"
 }
 ```
 
-Do not replace `db:stage:*`, `db:worktree:*`, `initialize-worktree`, or `destroy-worktree` wrappers until equivalent behavior is explicitly implemented and smoke-tested in `wt`.
+Still not migrated after PR #529:
+
+```json
+{
+  "supabase:reset": "node ./scripts/db/supabase-local-db.mjs reset",
+  "supabase:db:diff": "node ./scripts/db/supabase-local-db.mjs diff",
+  "supabase:gen-types": "... node ./scripts/db/supabase-local-db.mjs gen-types --lang typescript ...",
+  "initialize-worktree": "node ./scripts/initialize-worktree.mjs",
+  "destroy-worktree": "node ./scripts/destroy-worktree.mjs"
+}
+```
+
+Do not remove these local scripts until equivalent `wt` commands exist and are smoke-tested.
+
+Detailed notes are in `docs/container-tracker-pr-529.md`.
+
+## CI and pnpm versioning
+
+If a project pins `packageManager`, do not also pass a conflicting version to `pnpm/action-setup`.
+
+For example, if `package.json` contains:
+
+```json
+{
+  "packageManager": "pnpm@11.1.3"
+}
+```
+
+then the GitHub Actions setup should not also specify `version: 9`:
+
+```yaml
+- name: Setup pnpm
+  uses: pnpm/action-setup@v4
+```
+
+Do not use:
+
+```yaml
+- name: Setup pnpm
+  uses: pnpm/action-setup@v4
+  with:
+    version: 9
+```
 
 ## Publishing
 
-Dry-run the package contents:
+Dry-run package contents:
 
 ```bash
 pnpm pack --dry-run
@@ -288,9 +410,16 @@ npm login
 pnpm publish --access public
 ```
 
+Validate publication:
+
+```bash
+npm view @marcuscastelo/wt version
+npx -y @marcuscastelo/wt@<version> --help
+```
+
 ## Design rules
 
-- Core must not contain Container Tracker names.
+- Core must not contain Container Tracker domain rules.
 - Supabase behavior must stay behind an adapter.
 - Repo-specific hooks must be configured, not hardcoded.
 - Local secrets are copied only by explicit allowlist.
