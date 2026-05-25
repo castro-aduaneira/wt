@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import { dbCommand, ensureStage, rebuildStage, refreshStageLocalSnapshot, showStageStatus } from "./features/db-command.js";
+import { dbCommand, ensureStage, rebuildStage, refreshStageLocalSnapshot, showStageStatus, showWorktreeStatus } from "./features/db-command.js";
 import { destroyWorktree } from "./features/destroy-worktree.js";
 import { showEnvStatus } from "./features/env-status.js";
 import { initWorktree } from "./features/init-worktree.js";
@@ -136,6 +136,15 @@ db
   .description("Return this worktree to shared staging mode")
   .action(async () => {
     await dbCommand("rejoin", { cwd: process.cwd() });
+  });
+
+const worktree = db.command("worktree").description("Worktree database environment commands");
+
+worktree
+  .command("status")
+  .description("Print current worktree database environment state")
+  .action(async () => {
+    await showWorktreeStatus({ cwd: process.cwd() });
   });
 
 const stage = db.command("stage").description("Shared staging database commands");
