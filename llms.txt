@@ -1,10 +1,12 @@
 # wt
 
-Reusable CLI for Git worktree orchestration and isolated Supabase local stacks.
+Reusable CLI for Git worktree orchestration and local Supabase environments.
 
-Use wt when a repository needs deterministic worktree setup, explicit local file seed, safe worktree cleanup, or per-worktree Supabase stacks.
+Use `wt` when a repository needs deterministic worktree setup, explicit local file seed, safe worktree cleanup, shared staging Supabase, or per-worktree Supabase dev stacks.
 
-Primary commands:
+## Primary Commands
+
+Worktree:
 
 - `wt setup`: create `wt.config.json` interactively.
 - `wt setup --yes`: create `wt.config.json` with safe defaults.
@@ -15,35 +17,95 @@ Primary commands:
 - `wt destroy`: safely remove the current linked worktree.
 - `wt destroy --force`: remove a disposable worktree even with local changes/unpushed commits.
 - `wt env status`: print current repo/worktree state.
-- `wt supabase config --isolated`: inspect generated isolated Supabase config.
-- `wt supabase start --isolated`: start an isolated Supabase stack using deterministic ports.
-- `wt supabase status --isolated`: inspect isolated stack status.
-- `wt supabase status --isolated --env`: print env vars for the isolated stack.
-- `wt supabase stop --isolated`: stop the isolated stack.
-- `wt db emancipate`: start isolated Supabase and bind `.env` through a marker-scoped managed block.
-- `wt db rejoin`: stop isolated Supabase and remove only the marker-scoped managed block.
 
-Rules for LLMs:
+Supabase isolated mode:
+
+- `wt supabase config --isolated`: inspect generated isolated Supabase config.
+- `wt supabase start --isolated`: start isolated Supabase using deterministic ports.
+- `wt supabase status --isolated`: inspect isolated stack status.
+- `wt supabase status --isolated --env`: print env vars for isolated stack.
+- `wt supabase stop --isolated`: stop isolated stack.
+
+Supabase active mode:
+
+- `wt supabase start`: start or ensure the active environment from worktree state.
+- `wt supabase status`: inspect the active environment from worktree state.
+- `wt supabase status --env`: print env vars for the active environment.
+- `wt supabase stop`: stop the active dev stack only when mode is `emancipated`; refuses to stop shared staging.
+
+Database/worktree environment:
+
+- `wt db stage status`: inspect shared staging without starting it.
+- `wt db stage ensure`: materialize/start shared staging.
+- `wt db stage refresh-local-snapshot`: refresh shared staging data-only snapshot.
+- `wt db stage rebuild`: rebuild shared staging, restore snapshot if present, apply local seed, and refresh snapshot.
+- `wt db worktree init`: initialize current linked worktree in shared staging mode.
+- `wt db worktree status`: print state v2 for current linked worktree.
+- `wt db emancipate`: create or reattach the worktree dev stack and bind `.env` to it.
+- `wt db rejoin`: return to shared staging and stop the dev stack if needed.
+
+## Rules for LLMs
 
 - Prefer `wt new` over raw `git worktree add` when creating worktrees from the canonical checkout.
 - If a GUI already creates the worktree, use `wt init` as the post-create hook.
-- If a GUI already deletes the worktree, use `wt db rejoin || true` as the cleanup hook; do not call `wt destroy` from that hook.
-- Never manually edit or delete `.env` to switch stacks. Use `wt db emancipate` and `wt db rejoin`.
-- Never remove user-owned `.env` assignments outside the `WT MANAGED ENV` marker block.
-- Treat Supabase status env output as log-sensitive.
-- Use `wt migrate --dry-run` before replacing legacy config.
+- If a GUI already deletes the worktree, use `wt db rejoin || true` as cleanup; do not call `wt destroy` from that hook.
+- Never manually edit or delete `.env` to switch Supabase stacks. Use `wt db emancipate` and `wt db rejoin`.
+- Treat `wt supabase status --env` output as log-sensitive.
+- Use active Supabase commands when the repository has state v2 and wants the active staging/emancipated environment.
+- Use `--isolated` only for legacy isolated workdirs or explicit compatibility scripts.
+- Do not remove repository-local scripts until equivalent `wt` commands are implemented and smoke-tested.
 
-Recommended GUI hooks:
+## Recommended GUI Hooks
 
 - Worktree initialization command: `wt init`
+- Conservative initialization command: `wt init --no-hooks`
 - Worktree cleanup command: `wt db rejoin || true`
+- Worktree deletion command: `wt destroy`, only when deletion is delegated to `wt`
 
-Recommended Container Tracker wrappers:
+## Container Tracker Script Mapping Validated in PR #529
+
+Container Tracker uses:
+
+- runtime root: `ct-local-envs`
+- stage project prefix: `ct_stage_`
+- worktree project prefix: `ct_dev_`
+- Supabase config: `supabase/config.toml`
+
+Validated script mapping:
+
+- `db:worktree:init`: `wt db worktree init`
+- `db:worktree:status`: `wt db worktree status`
+- `db:stage:ensure`: `wt db stage ensure`
+- `db:stage:status`: `wt db stage status`
+- `db:stage:refresh-local-snapshot`: `wt db stage refresh-local-snapshot`
+- `db:stage:rebuild`: `wt db stage rebuild`
+- `db:emancipate`: `wt db emancipate`
+- `db:rejoin`: `wt db rejoin`
+- `supabase:active:start`: `wt supabase start`
+- `supabase:active:stop`: `wt supabase stop`
+- `supabase:active:status`: `wt supabase status`
+- `supabase:active:status:env`: `wt supabase status --env`
+
+Compatibility scripts intentionally kept:
 
 - `supabase:start`: `wt supabase start --isolated`
 - `supabase:start:analytics`: `wt supabase start --isolated --with-analytics`
 - `supabase:stop`: `wt supabase stop --isolated`
 - `supabase:status`: `wt supabase status --isolated`
 - `supabase:status:env`: `wt supabase status --isolated --env`
-- `db:emancipate`: `wt db emancipate`
-- `db:rejoin`: `wt db rejoin`
+
+Still local after PR #529:
+
+- `supabase:reset`
+- `supabase:db:diff`
+- `supabase:gen-types`
+- `initialize-worktree`
+- `destroy-worktree`
+
+Do not delete the local wrappers until a follow-up PR adds equivalent `wt` commands and validates them.
+
+## Pnpm CI Rule
+
+If a repository sets `packageManager`, do not pass a conflicting version to `pnpm/action-setup`.
+
+Example: if `package.json` has `packageManager: pnpm@11.1.3`, remove `with: version: 9` from `pnpm/action-setup@v4`.
