@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parseSupabaseStatusEnvOutput, requiredSupabaseEnvValue } from "../adapters/supabase/supabase-env.js";
-import { getStageDefinition } from "../adapters/supabase/supabase-stage.js";
+import { ensureStageEnvironment, getStageDefinition } from "../adapters/supabase/supabase-stage.js";
 import { buildSupabaseStartArgs, buildSupabaseStatusArgs, buildSupabaseStopArgs } from "../adapters/supabase/supabase-runtime.js";
 import { materializeSupabaseWorkdir } from "../adapters/supabase/supabase-workdir.js";
 import { runCapture, runInherit } from "../core/command.js";
@@ -41,6 +41,18 @@ export async function showStageStatus(input: { cwd: string }): Promise<void> {
       2,
     ),
   );
+}
+
+export async function ensureStage(input: {
+  cwd: string;
+  withAnalytics: boolean;
+}): Promise<void> {
+  const context = await getRepoContext(input.cwd, { requireLinkedWorktree: false });
+  const stage = await ensureStageEnvironment(context, {
+    withAnalytics: input.withAnalytics,
+  });
+
+  console.log(`shared staging ready: ${stage.projectId} (${stage.envMap.API_URL})`);
 }
 
 async function emancipate(cwd: string): Promise<void> {
