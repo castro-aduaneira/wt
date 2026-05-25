@@ -146,11 +146,12 @@ function renderWorktreeEnvValues(state: WorktreeStateV2): Record<string, string>
 }
 
 function sanitizeStateForPersistence(state: WorktreeStateV2): WorktreeStateV2 {
-  return {
-    ...state,
-    staging: { ...state.staging, envMap: null },
-    emancipated: { ...state.emancipated, envMap: null },
-  };
+  const sanitized: WorktreeStateV2 = JSON.parse(JSON.stringify(state)) as WorktreeStateV2;
+
+  delete sanitized.staging.envMap;
+  delete sanitized.emancipated.envMap;
+
+  return sanitized;
 }
 
 async function getDefaultEmancipated(context: RepoContext): Promise<{
