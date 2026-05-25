@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parseSupabaseStatusEnvOutput, requiredSupabaseEnvValue } from "../adapters/supabase/supabase-env.js";
+import { getStageDefinition } from "../adapters/supabase/supabase-stage.js";
 import { buildSupabaseStartArgs, buildSupabaseStatusArgs, buildSupabaseStopArgs } from "../adapters/supabase/supabase-runtime.js";
 import { materializeSupabaseWorkdir } from "../adapters/supabase/supabase-workdir.js";
 import { runCapture, runInherit } from "../core/command.js";
@@ -19,6 +20,27 @@ export async function dbCommand(
   }
 
   await rejoin(options.cwd);
+}
+
+export async function showStageStatus(input: { cwd: string }): Promise<void> {
+  const context = await getRepoContext(input.cwd, { requireLinkedWorktree: false });
+  const stage = await getStageDefinition(context);
+
+  console.log(
+    JSON.stringify(
+      {
+        projectId: stage.projectId,
+        workdir: stage.workdir,
+        snapshotPath: stage.snapshotPath,
+        ports: stage.ports,
+        running: stage.running,
+        snapshotExists: stage.snapshotExists,
+        sourceConfigPath: stage.sourceConfigPath,
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 async function emancipate(cwd: string): Promise<void> {
