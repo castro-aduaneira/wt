@@ -13,9 +13,16 @@ export interface CopySeedEntry {
   overwrite?: boolean;
 }
 
+export interface WtRuntimeConfig {
+  rootDirName?: string;
+  stageProjectIdPrefix?: string;
+  worktreeProjectIdPrefix?: string;
+}
+
 export interface WtConfig {
   worktreeRoot?: string;
   branchPrefix?: string;
+  runtime?: WtRuntimeConfig;
   seed?: {
     copy?: CopySeedEntry[];
   };
