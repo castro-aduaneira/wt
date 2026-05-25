@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import { dbCommand } from "./features/db-command.js";
+import { dbCommand, showStageStatus } from "./features/db-command.js";
 import { destroyWorktree } from "./features/destroy-worktree.js";
 import { showEnvStatus } from "./features/env-status.js";
 import { initWorktree } from "./features/init-worktree.js";
@@ -136,6 +136,15 @@ db
   .description("Return this worktree to shared staging mode")
   .action(async () => {
     await dbCommand("rejoin", { cwd: process.cwd() });
+  });
+
+const stage = db.command("stage").description("Shared staging database commands");
+
+stage
+  .command("status")
+  .description("Print shared staging definition and status without starting it")
+  .action(async () => {
+    await showStageStatus({ cwd: process.cwd() });
   });
 
 const supabase = program.command("supabase").description("Supabase adapter commands");
