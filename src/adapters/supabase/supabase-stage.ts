@@ -1,15 +1,19 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { runCapture } from "../../core/command.js";
+import { runCapture, runInherit } from "../../core/command.js";
 import { loadConfig } from "../../core/config.js";
 import { pathExists } from "../../core/fs.js";
 import { hashString } from "../../core/identity.js";
 import type { RepoContext } from "../../core/repo-context.js";
-import { readSupabasePortsFromConfig, type SupabasePorts } from "./supabase-config.js";
+import { readSupabasePortsFromConfig, renderSupabaseConfig, type SupabasePorts } from "./supabase-config.js";
+import { getSupabaseStatusEnvMap } from "./supabase-db.js";
+import { buildSupabaseStartArgs } from "./supabase-runtime.js";
 
 export const DEFAULT_STAGE_PROJECT_ID_PREFIX = "wt_stage_";
 export const STAGING_PROJECT_DIR_NAME = "staging";
 export const STAGING_SNAPSHOT_FILE_NAME = "staging.dump";
+
+const EXCLUDED_SUPABASE_ENTRIES = new Set(["config.toml", ".temp", ".branches"]);
 
 export interface StageRuntimePaths {
   stageRoot: string;
@@ -28,6 +32,11 @@ export interface StageDefinition {
   sourceConfigPath: string;
 }
 
+export interface RunningStageEnvironment extends StageDefinition {
+  running: true;
+  envMap: Record<string, string>;
+}
+
 export async function getStageDefinition(context: RepoContext): Promise<StageDefinition> {
   const scaffold = await resolveStageScaffold(context);
   const paths = getStageRuntimePaths(context.runtimeRoot);
@@ -43,6 +52,69 @@ export async function getStageDefinition(context: RepoContext): Promise<StageDef
     sourceSupabaseDir: scaffold.sourceSupabaseDir,
     sourceConfigPath: scaffold.sourceConfigPath,
   };
+}
+
+export async function ensureStageEnvironment(
+  context: RepoContext,
+  options: { withAnalytics: boolean } = { withAnalytics: false },
+): Promise<RunningStageEnvironment> {
+  const stageDefinition = await getStageDefinition(context);
+
+  await materializeStageProject(context, options);
+
+  if (!(await isSupabaseProjectRunning(stageDefinition.workdir))) {
+    await runInherit(
+      "npx",
+      buildSupabaseStartArgs({
+        workdir: stageDefinition.workdir,
+        withAnalytics: options.withAnalytics,
+      }),
+      stageDefinition.workdir,
+    );
+  }
+
+  return getRunningStageEnvironment(context);
+}
+
+export async function getRunningStageEnvironment(context: RepoContext): Promise<RunningStageEnvironment> {
+  const stageDefinition = await getStageDefinition(context);
+  const envMap = await getSupabaseStatusEnvMap(stageDefinition.workdir);
+
+  return {
+    ...stageDefinition,
+    running: true,
+    envMap,
+  };
+}
+
+export async function materializeStageProject(
+  context: RepoContext,
+  options: { withAnalytics: boolean } = { withAnalytics: false },
+): Promise<StageDefinition> {
+  const scaffold = await resolveStageScaffold(context);
+  const paths = getStageRuntimePaths(context.runtimeRoot);
+  const stageProjectIdPrefix = await resolveStageProjectIdPrefix(context);
+  const projectId = buildStageProjectId(context.mainRepoPath, stageProjectIdPrefix);
+  const ports = readSupabasePortsFromConfig(scaffold.rawTemplate);
+  const targetSupabaseDir = path.join(paths.stageProjectWorkdir, "supabase");
+
+  await fs.mkdir(paths.stageProjectWorkdir, { recursive: true });
+
+  if (!(await pathExists(targetSupabaseDir))) {
+    await copySupabaseDirectory(scaffold.sourceSupabaseDir, targetSupabaseDir);
+  }
+
+  await fs.mkdir(path.join(targetSupabaseDir, ".temp"), { recursive: true });
+  await fs.writeFile(
+    path.join(targetSupabaseDir, "config.toml"),
+    renderSupabaseConfig(scaffold.rawTemplate, {
+      projectId,
+      ports,
+      analyticsEnabled: options.withAnalytics,
+    }),
+  );
+
+  return getStageDefinition(context);
 }
 
 export async function resolveStageScaffold(context: RepoContext): Promise<{
@@ -108,5 +180,21 @@ export async function isSupabaseProjectRunning(workdir: string): Promise<boolean
     return true;
   } catch {
     return false;
+  }
+}
+
+async function copySupabaseDirectory(sourceDir: string, targetDir: string): Promise<void> {
+  await fs.mkdir(targetDir, { recursive: true });
+  const entries = await fs.readdir(sourceDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (EXCLUDED_SUPABASE_ENTRIES.has(entry.name)) {
+      continue;
+    }
+
+    await fs.cp(path.join(sourceDir, entry.name), path.join(targetDir, entry.name), {
+      force: true,
+      recursive: true,
+    });
   }
 }
