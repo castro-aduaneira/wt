@@ -13,7 +13,10 @@ import { runCapture, runInherit } from "../core/command.js";
 import { loadConfig } from "../core/config.js";
 import { pathExists } from "../core/fs.js";
 import { upsertManagedEnvFile, removeManagedEnvFileBlock } from "../core/managed-env.js";
-import { getRepoContext } from "../core/repo-context.js";
+import { getRepoContext, type RepoContext } from "../core/repo-context.js";
+import { readFirstState, type WorktreeStateV2 } from "../core/state.js";
+
+const DEFAULT_WORKTREE_PROJECT_ID_PREFIX = "wt_";
 
 export async function dbCommand(
   command: "emancipate" | "rejoin",
@@ -46,6 +49,13 @@ export async function showStageStatus(input: { cwd: string }): Promise<void> {
       2,
     ),
   );
+}
+
+export async function showWorktreeStatus(input: { cwd: string }): Promise<void> {
+  const context = await getRepoContext(input.cwd, { requireLinkedWorktree: true });
+  const state = await getWorktreeStateOrDefault(context);
+
+  console.log(JSON.stringify(state, null, 2));
 }
 
 export async function ensureStage(input: {
@@ -163,6 +173,77 @@ async function rejoin(cwd: string): Promise<void> {
   console.log("Stopped isolated Supabase stack and removed wt-managed environment block from .env.");
 }
 
+async function getWorktreeStateOrDefault(context: RepoContext): Promise<WorktreeStateV2> {
+  const existing = await readFirstState([context.statePath, context.sharedStatePath]);
+  return normalizeWorktreeState(existing, context);
+}
+
+async function normalizeWorktreeState(
+  rawState: unknown,
+  context: RepoContext,
+): Promise<WorktreeStateV2> {
+  const raw = isRecord(rawState) ? rawState : {};
+  const rawStaging = isRecord(raw.staging) ? raw.staging : {};
+  const rawEmancipated = isRecord(raw.emancipated) ? raw.emancipated : {};
+  const stageDefinition = await getStageDefinition(context);
+  const defaultEmancipated = await getDefaultEmancipated(context);
+  const mode = raw.mode === "emancipated" ? "emancipated" : "staging";
+
+  return {
+    version: 2,
+    worktreeId: typeof raw.worktreeId === "string" ? raw.worktreeId : context.worktreeId,
+    worktreePath: typeof raw.worktreePath === "string" ? raw.worktreePath : context.worktreePath,
+    gitBranch: typeof raw.gitBranch === "string" ? raw.gitBranch : context.gitBranch,
+    mode,
+    staging: {
+      projectId:
+        typeof rawStaging.projectId === "string" ? rawStaging.projectId : stageDefinition.projectId,
+      workdir: typeof rawStaging.workdir === "string" ? rawStaging.workdir : stageDefinition.workdir,
+      snapshotPath:
+        typeof rawStaging.snapshotPath === "string"
+          ? rawStaging.snapshotPath
+          : stageDefinition.snapshotPath,
+      ports: isRecord(rawStaging.ports)
+        ? toNumberRecord(rawStaging.ports)
+        : null,
+      status: toRuntimeStatus(rawStaging.status, "absent"),
+      envMap: isRecord(rawStaging.envMap) ? toStringRecord(rawStaging.envMap) : null,
+    },
+    emancipated: {
+      projectId:
+        typeof rawEmancipated.projectId === "string"
+          ? rawEmancipated.projectId
+          : defaultEmancipated.projectId,
+      workdir:
+        typeof rawEmancipated.workdir === "string"
+          ? rawEmancipated.workdir
+          : defaultEmancipated.workdir,
+      ports: isRecord(rawEmancipated.ports)
+        ? toNumberRecord(rawEmancipated.ports)
+        : null,
+      status: toRuntimeStatus(rawEmancipated.status, "absent"),
+      preserved: typeof rawEmancipated.preserved === "boolean" ? rawEmancipated.preserved : false,
+      envMap: isRecord(rawEmancipated.envMap) ? toStringRecord(rawEmancipated.envMap) : null,
+    },
+    generatedFiles: Array.isArray(raw.generatedFiles)
+      ? [...new Set(raw.generatedFiles.filter((value): value is string => typeof value === "string"))]
+      : [".env", ".worktree-state.json"],
+  };
+}
+
+async function getDefaultEmancipated(context: RepoContext): Promise<{
+  projectId: string;
+  workdir: string;
+}> {
+  const { config } = await loadConfig(context.worktreePath);
+  const prefix = config.runtime?.worktreeProjectIdPrefix ?? DEFAULT_WORKTREE_PROJECT_ID_PREFIX;
+
+  return {
+    projectId: `${prefix}${context.worktreeId}`,
+    workdir: path.join(context.worktreeRuntimeRoot, "project"),
+  };
+}
+
 async function readSupabaseConfigTemplate(worktreePath: string): Promise<{
   configPath: string;
   rawTemplate: string;
@@ -181,4 +262,27 @@ async function readSupabaseConfigTemplate(worktreePath: string): Promise<{
     configPath,
     rawTemplate: await fs.readFile(configPath, "utf8"),
   };
+}
+
+function toRuntimeStatus(value: unknown, fallback: "absent" | "stopped" | "running"):
+  | "absent"
+  | "stopped"
+  | "running" {
+  return value === "running" || value === "stopped" || value === "absent" ? value : fallback;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function toStringRecord(value: Record<string, unknown>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
+}
+
+function toNumberRecord(value: Record<string, unknown>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, number] => typeof entry[1] === "number"),
+  );
 }
