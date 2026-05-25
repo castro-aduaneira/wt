@@ -1,7 +1,10 @@
 import path from "node:path";
 import { type SupabasePorts } from "../adapters/supabase/supabase-config.js";
+import { getSupabaseStatusEnvMap } from "../adapters/supabase/supabase-db.js";
 import { requiredSupabaseEnvValue } from "../adapters/supabase/supabase-env.js";
-import { ensureStageEnvironment, getStageDefinition } from "../adapters/supabase/supabase-stage.js";
+import { ensureStageEnvironment, getStageDefinition, isSupabaseProjectRunning } from "../adapters/supabase/supabase-stage.js";
+import { buildSupabaseStopArgs } from "../adapters/supabase/supabase-runtime.js";
+import { runInherit } from "../core/command.js";
 import { loadConfig } from "../core/config.js";
 import { pathExists } from "../core/fs.js";
 import { upsertWorktreeManagedEnvFile } from "../core/managed-env.js";
@@ -58,6 +61,67 @@ export async function initWorktreeDatabase(input: {
   console.log(`worktree initialized in shared staging mode: ${nextState.worktreeId}`);
 }
 
+export async function rejoinWorktreeDatabase(input: {
+  cwd: string;
+  withAnalytics: boolean;
+}): Promise<void> {
+  const context = await getRepoContext(input.cwd, { requireLinkedWorktree: true });
+
+  if (!(await pathExists(context.envPath))) {
+    throw new Error(
+      `Missing .env at ${context.envPath}. Run wt init first so the base file exists before environment binding.`,
+    );
+  }
+
+  const previousState = await getWorktreeStateOrDefault(context);
+  const stage = await ensureStageEnvironment(context, {
+    withAnalytics: input.withAnalytics,
+  });
+  const emancipated = await resolveEmancipatedEnvironment(context, previousState);
+
+  if (emancipated.status === "running") {
+    await runInherit(
+      "npx",
+      buildSupabaseStopArgs({ workdir: emancipated.workdir, noBackup: false }),
+      context.worktreePath,
+    );
+  }
+
+  const nextState = await normalizeWorktreeState(
+    {
+      ...previousState,
+      mode: "staging",
+      staging: {
+        projectId: stage.projectId,
+        workdir: stage.workdir,
+        snapshotPath: stage.snapshotPath,
+        ports: stage.ports,
+        status: "running",
+        envMap: stage.envMap,
+      },
+      emancipated: {
+        ...emancipated,
+        status: emancipated.status === "absent" ? "absent" : "stopped",
+        preserved: emancipated.status !== "absent",
+      },
+    },
+    context,
+  );
+
+  await upsertWorktreeManagedEnvFile({
+    envPath: context.envPath,
+    values: renderWorktreeEnvValues(nextState),
+  });
+  await writeWorktreeState(context, nextState);
+
+  if (previousState.mode === "staging") {
+    console.log("worktree already using shared staging");
+    return;
+  }
+
+  console.log(`worktree rejoined shared staging: ${stage.projectId}`);
+}
+
 async function getWorktreeStateOrDefault(context: RepoContext): Promise<WorktreeStateV2> {
   const existing = await readFirstState([context.statePath, context.sharedStatePath]);
   return normalizeWorktreeState(existing, context);
@@ -105,6 +169,34 @@ async function normalizeWorktreeState(
     generatedFiles: Array.isArray(raw.generatedFiles)
       ? [...new Set(raw.generatedFiles.filter((value): value is string => typeof value === "string"))]
       : [".env", ".worktree-state.json"],
+  };
+}
+
+async function resolveEmancipatedEnvironment(
+  context: RepoContext,
+  previousState: WorktreeStateV2,
+): Promise<WorktreeStateV2["emancipated"]> {
+  const defaultEmancipated = await getDefaultEmancipated(context);
+  const base = {
+    projectId: previousState.emancipated.projectId || defaultEmancipated.projectId,
+    workdir: previousState.emancipated.workdir || defaultEmancipated.workdir,
+    ports: previousState.emancipated.ports,
+    preserved: previousState.emancipated.preserved,
+    envMap: null,
+  };
+
+  if (!(await pathExists(path.join(base.workdir, "supabase", "config.toml")))) {
+    return { ...base, status: "absent" };
+  }
+
+  if (!(await isSupabaseProjectRunning(base.workdir))) {
+    return { ...base, status: "stopped" };
+  }
+
+  return {
+    ...base,
+    status: "running",
+    envMap: await getSupabaseStatusEnvMap(base.workdir),
   };
 }
 
