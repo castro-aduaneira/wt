@@ -7,7 +7,7 @@ import { hashString } from "../../core/identity.js";
 import type { RepoContext } from "../../core/repo-context.js";
 import { readSupabasePortsFromConfig, type SupabasePorts } from "./supabase-config.js";
 
-export const STAGE_PROJECT_ID_PREFIX = "wt_stage_";
+export const DEFAULT_STAGE_PROJECT_ID_PREFIX = "wt_stage_";
 export const STAGING_PROJECT_DIR_NAME = "staging";
 export const STAGING_SNAPSHOT_FILE_NAME = "staging.dump";
 
@@ -31,9 +31,10 @@ export interface StageDefinition {
 export async function getStageDefinition(context: RepoContext): Promise<StageDefinition> {
   const scaffold = await resolveStageScaffold(context);
   const paths = getStageRuntimePaths(context.runtimeRoot);
+  const stageProjectIdPrefix = await resolveStageProjectIdPrefix(context);
 
   return {
-    projectId: buildStageProjectId(context.mainRepoPath),
+    projectId: buildStageProjectId(context.mainRepoPath, stageProjectIdPrefix),
     workdir: paths.stageProjectWorkdir,
     snapshotPath: paths.stageSnapshotPath,
     ports: readSupabasePortsFromConfig(scaffold.rawTemplate),
@@ -85,8 +86,16 @@ export function getStageRuntimePaths(runtimeRoot: string): StageRuntimePaths {
   };
 }
 
-export function buildStageProjectId(mainRepoPath: string): string {
-  return `${STAGE_PROJECT_ID_PREFIX}${hashString(path.resolve(mainRepoPath), 8)}`;
+export function buildStageProjectId(
+  mainRepoPath: string,
+  prefix = DEFAULT_STAGE_PROJECT_ID_PREFIX,
+): string {
+  return `${prefix}${hashString(path.resolve(mainRepoPath), 8)}`;
+}
+
+export async function resolveStageProjectIdPrefix(context: RepoContext): Promise<string> {
+  const { config } = await loadConfig(context.worktreePath);
+  return config.runtime?.stageProjectIdPrefix ?? DEFAULT_STAGE_PROJECT_ID_PREFIX;
 }
 
 export async function isSupabaseProjectRunning(workdir: string): Promise<boolean> {
