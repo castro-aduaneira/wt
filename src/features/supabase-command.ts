@@ -7,6 +7,7 @@ import { runCapture, runInherit } from "../core/command.js";
 import { loadConfig } from "../core/config.js";
 import { pathExists } from "../core/fs.js";
 import { getRepoContext } from "../core/repo-context.js";
+import { startActiveSupabase, stopActiveSupabase } from "./supabase-active-command.js";
 import { getActiveSupabaseWorkdir } from "./worktree-db-command.js";
 
 export async function inspectSupabaseConfig(input: {
@@ -111,9 +112,14 @@ export async function startSupabase(input: {
   withAnalytics: boolean;
   isolated: boolean;
 }): Promise<void> {
+  if (!input.isolated) {
+    await startActiveSupabase({ cwd: input.cwd, withAnalytics: input.withAnalytics });
+    return;
+  }
+
   const context = await getRepoContext(input.cwd, { requireLinkedWorktree: false });
   const resolved = await resolveSupabaseWorkdir(context.worktreePath, {
-    isolated: input.isolated,
+    isolated: true,
     withAnalytics: input.withAnalytics,
   });
   const args = buildSupabaseStartArgs({
@@ -129,9 +135,14 @@ export async function stopSupabase(input: {
   isolated: boolean;
   noBackup: boolean;
 }): Promise<void> {
+  if (!input.isolated) {
+    await stopActiveSupabase({ cwd: input.cwd, noBackup: input.noBackup });
+    return;
+  }
+
   const context = await getRepoContext(input.cwd, { requireLinkedWorktree: false });
   const resolved = await resolveSupabaseWorkdir(context.worktreePath, {
-    isolated: input.isolated,
+    isolated: true,
     withAnalytics: false,
   });
   const args = buildSupabaseStopArgs({
