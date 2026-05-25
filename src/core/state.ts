@@ -19,7 +19,7 @@ export interface StageState {
   snapshotPath: string;
   ports: Record<string, number> | null;
   status: "absent" | "stopped" | "running";
-  envMap: Record<string, string> | null;
+  envMap?: Record<string, string> | null;
 }
 
 export interface EmancipatedState {
@@ -28,7 +28,7 @@ export interface EmancipatedState {
   ports: Record<string, number> | null;
   status: "absent" | "stopped" | "running";
   preserved: boolean;
-  envMap: Record<string, string> | null;
+  envMap?: Record<string, string> | null;
 }
 
 export interface WorktreeStateV2 {
