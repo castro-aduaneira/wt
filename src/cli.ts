@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import { dbCommand, showStageStatus } from "./features/db-command.js";
+import { dbCommand, ensureStage, showStageStatus } from "./features/db-command.js";
 import { destroyWorktree } from "./features/destroy-worktree.js";
 import { showEnvStatus } from "./features/env-status.js";
 import { initWorktree } from "./features/init-worktree.js";
@@ -145,6 +145,17 @@ stage
   .description("Print shared staging definition and status without starting it")
   .action(async () => {
     await showStageStatus({ cwd: process.cwd() });
+  });
+
+stage
+  .command("ensure")
+  .description("Materialize and start the shared staging database if needed")
+  .option("--with-analytics", "start analytics instead of using the low-RAM exclude set")
+  .action(async (options: { withAnalytics?: boolean }) => {
+    await ensureStage({
+      cwd: process.cwd(),
+      withAnalytics: options.withAnalytics === true,
+    });
   });
 
 const supabase = program.command("supabase").description("Supabase adapter commands");
