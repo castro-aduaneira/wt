@@ -48,6 +48,20 @@ export async function showWorktreeStatus(input: { cwd: string }): Promise<void> 
   console.log(JSON.stringify(state, null, 2));
 }
 
+export async function getActiveSupabaseWorkdir(input: { cwd: string }): Promise<{
+  workdir: string;
+  mode: "staging" | "emancipated";
+}> {
+  const context = await getRepoContext(input.cwd, { requireLinkedWorktree: false });
+  const state = await getWorktreeStateOrDefault(context);
+
+  if (state.mode === "emancipated") {
+    return { workdir: state.emancipated.workdir, mode: "emancipated" };
+  }
+
+  return { workdir: state.staging.workdir, mode: "staging" };
+}
+
 export async function initWorktreeDatabase(input: {
   cwd: string;
   withAnalytics: boolean;
