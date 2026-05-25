@@ -15,7 +15,7 @@ const program = new Command();
 program
   .name("wt")
   .description("Reusable Git worktree orchestration CLI")
-  .version("0.2.2");
+  .version("0.3.0");
 
 program
   .command("setup")
