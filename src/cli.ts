@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import { dbCommand, ensureStage, refreshStageLocalSnapshot, showStageStatus } from "./features/db-command.js";
+import { dbCommand, ensureStage, rebuildStage, refreshStageLocalSnapshot, showStageStatus } from "./features/db-command.js";
 import { destroyWorktree } from "./features/destroy-worktree.js";
 import { showEnvStatus } from "./features/env-status.js";
 import { initWorktree } from "./features/init-worktree.js";
@@ -164,6 +164,17 @@ stage
   .option("--with-analytics", "start analytics instead of using the low-RAM exclude set")
   .action(async (options: { withAnalytics?: boolean }) => {
     await refreshStageLocalSnapshot({
+      cwd: process.cwd(),
+      withAnalytics: options.withAnalytics === true,
+    });
+  });
+
+stage
+  .command("rebuild")
+  .description("Rebuild shared staging, restore snapshot if present, apply local seed, and refresh snapshot")
+  .option("--with-analytics", "start analytics instead of using the low-RAM exclude set")
+  .action(async (options: { withAnalytics?: boolean }) => {
+    await rebuildStage({
       cwd: process.cwd(),
       withAnalytics: options.withAnalytics === true,
     });
