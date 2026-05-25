@@ -89,7 +89,7 @@ async function normalizeWorktreeState(
       projectId: typeof rawStaging.projectId === "string" ? rawStaging.projectId : stageDefinition.projectId,
       workdir: typeof rawStaging.workdir === "string" ? rawStaging.workdir : stageDefinition.workdir,
       snapshotPath: typeof rawStaging.snapshotPath === "string" ? rawStaging.snapshotPath : stageDefinition.snapshotPath,
-      ports: isRecord(rawStaging.ports) ? toNumberRecord(rawStaging.ports) : stageDefinition.ports,
+      ports: isRecord(rawStaging.ports) ? toNumberRecord(rawStaging.ports) : toNumberRecord(stageDefinition.ports),
       status: toRuntimeStatus(rawStaging.status, stageDefinition.running ? "running" : "stopped"),
       envMap: isRecord(rawStaging.envMap) ? toStringRecord(rawStaging.envMap) : null,
     },
