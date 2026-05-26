@@ -8,6 +8,7 @@ import { initWorktree } from "./features/init-worktree.js";
 import { migrateConfig } from "./features/migrate-command.js";
 import { type NewWorktreeOptions, newWorktree } from "./features/new-worktree.js";
 import { setupConfig } from "./features/setup-command.js";
+import { registerSupabaseStructuralCommands } from "./features/supabase-structural-cli.js";
 import { inspectSupabaseConfig, showSupabaseStatus, startSupabase, stopSupabase } from "./features/supabase-command.js";
 import { emancipateWorktreeDatabase, initWorktreeDatabase, rejoinWorktreeDatabase, showWorktreeStatus } from "./features/worktree-db-command.js";
 
@@ -16,7 +17,7 @@ const program = new Command();
 program
   .name("wt")
   .description("Reusable Git worktree orchestration CLI")
-  .version("0.12.0");
+  .version("0.13.0");
 
 program
   .command("setup")
@@ -269,6 +270,8 @@ supabase
       noBackup: options.backup === false,
     });
   });
+
+registerSupabaseStructuralCommands(supabase);
 
 program.parseAsync(normalizeArgv(process.argv)).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
